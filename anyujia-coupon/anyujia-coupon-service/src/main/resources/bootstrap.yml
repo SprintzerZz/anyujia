@@ -1,0 +1,95 @@
+server:
+  port: ${COUPON_SERVER_PORT:18084}
+
+spring:
+  config:
+    import:
+      - optional:nacos:share-redis-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+      - optional:nacos:anyujia-coupon-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+  application:
+    name: anyujia-coupon
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:${RUN_ENV:dev}}
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:anyujiadev}
+    password: ${MYSQL_PASSWORD:change-me}
+    hikari:
+      maximum-pool-size: ${COUPON_HIKARI_MAX_POOL_SIZE:30}
+      minimum-idle: ${COUPON_HIKARI_MIN_IDLE:5}
+      connection-timeout: ${COUPON_HIKARI_CONNECTION_TIMEOUT:1000}
+  cloud:
+    nacos:
+      discovery:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
+        fail-fast: false
+      config:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAMESRV_ADDR:127.0.0.1:9876}
+  producer:
+    group: coupon-redeem-producer-group
+    send-message-timeout: 3000
+
+coupon:
+  time-zone: ${COUPON_TIME_ZONE:Asia/Shanghai}
+  rocketmq:
+    redeem-topic: coupon-redeem-topic
+    redeem-consumer-group: coupon-redeem-consumer-group
+    grant-topic: coupon-grant-topic
+    grant-consumer-group: coupon-grant-consumer-group
+    expire-topic: coupon-expire-topic
+    expire-consumer-group: coupon-expire-consumer-group
+  grant:
+    scan-cron: 0 0/5 * * * ?
+  expire:
+    scan-cron: 0 0/10 * * * ?
+    scan-limit: 500
+
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:false}
+    admin:
+      addresses: ${XXL_JOB_ADMIN_ADDRESSES:}
+    accessToken: ${XXL_JOB_ACCESS_TOKEN:}
+    executor:
+      appname: ${XXL_JOB_EXECUTOR_APPNAME:anyujia-coupon}
+      ip: ${XXL_JOB_EXECUTOR_IP:}
+      port: ${XXL_JOB_EXECUTOR_PORT:9999}
+      logpath: ${XXL_JOB_LOG_PATH:/tmp/xxl-job}
+      logretentiondays: ${XXL_JOB_LOG_RETENTION_DAYS:7}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: sharding
+  datasource:
+    driver-class-name: org.apache.shardingsphere.driver.ShardingSphereDriver
+    url: jdbc:shardingsphere:classpath:shardingsphere-coupon.yaml
+    username:
+    password:

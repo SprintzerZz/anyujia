@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- 行政区划 Mapper SQL。 -->
+<mapper namespace="com.anyujia.anyujiaadminservice.map.mapper.RegionMapper">
+
+    <!--
+        行政区划实体字段映射。
+        显式声明 resultMap 可以避免依赖 MyBatis 驼峰映射配置。
+    -->
+    <resultMap id="SysRegionResultMap"
+               type="com.anyujia.anyujiaadminservice.map.domin.entity.SysRegion">
+        <!-- 主键 ID。 -->
+        <id column="id" property="id"/>
+        <!-- 区划编码。 -->
+        <result column="code" property="code"/>
+        <!-- 父级 ID。 -->
+        <result column="parent_id" property="parentId"/>
+        <!-- 父级编码。 -->
+        <result column="parent_code" property="parentCode"/>
+        <!-- 区划名称。 -->
+        <result column="name" property="name"/>
+        <!-- 区划全称。 -->
+        <result column="full_name" property="fullName"/>
+        <!-- 城市拼音。 -->
+        <result column="pinyin" property="pinyin"/>
+        <!-- 区划层级：省-1，市-2，区-3。 -->
+        <result column="level" property="level"/>
+        <!-- 经度。 -->
+        <result column="longitude" property="longitude"/>
+        <!-- 纬度。 -->
+        <result column="latitude" property="latitude"/>
+    </resultMap>
+
+    <!-- 查询全部区划信息，按拼音排序。 -->
+    <select id="selectAllRegion" resultMap="SysRegionResultMap">
+        select
+            id,
+            code,
+            parent_id,
+            parent_code,
+            name,
+            full_name,
+            pinyin,
+            level,
+            longitude,
+            latitude
+        from sys_region
+        order by pinyin
+    </select>
+
+</mapper>

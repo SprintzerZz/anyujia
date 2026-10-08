@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>安寓家房源与会话调试台</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <div class="brand-block">
+          <span class="brand-mark">安</span>
+          <div>
+            <h1>安寓家业务调试台</h1>
+            <p>房源发布、审核、租客咨询与实时会话</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <nav class="app-nav" aria-label="工作台导航">
+            <button id="chatNavButton" class="nav-button nav-active" type="button">会话</button>
+            <button id="publishNavButton" class="nav-button" type="button">房源工作台</button>
+          </nav>
+          <div id="connectionBadge" class="status-badge status-idle">
+            <span class="status-dot"></span>
+            <span id="connectionText">未连接</span>
+          </div>
+        </div>
+      </header>
+
+      <main id="chatWorkspace" class="workspace">
+        <aside class="control-pane">
+          <section class="control-section">
+            <div class="section-heading">
+              <h2>连接配置</h2>
+              <button id="resetButton" class="icon-button" type="button" title="重置本地游标">
+                <i data-lucide="rotate-ccw"></i>
+              </button>
+            </div>
+            <label class="field">
+              <span>访问令牌</span>
+              <input id="tokenInput" type="password" autocomplete="off" placeholder="Bearer Token" />
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span>当前用户 ID</span>
+                <input id="userIdInput" inputmode="numeric" placeholder="1" />
+              </label>
+              <label class="field">
+                <span>会话 ID</span>
+                <input id="sessionIdInput" inputmode="numeric" value="1" />
+              </label>
+            </div>
+            <label class="field">
+              <span>最后会话序号</span>
+              <input id="sequenceInput" inputmode="numeric" value="0" />
+            </label>
+            <div class="connection-actions">
+              <button id="connectButton" class="primary-button" type="button">
+                <i data-lucide="plug-zap"></i>
+                <span>建立连接</span>
+              </button>
+              <button id="disconnectButton" class="secondary-button" type="button" disabled>
+                <i data-lucide="unplug"></i>
+                <span>断开</span>
+              </button>
+            </div>
+            <button id="simulateButton" class="test-button" type="button" disabled>
+              <i data-lucide="wifi-off"></i>
+              <span>模拟网络中断</span>
+            </button>
+          </section>
+
+          <section class="control-section event-section">
+            <div class="section-heading">
+              <h2>连接事件</h2>
+              <button id="clearLogButton" class="icon-button" type="button" title="清空事件">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
+            <ol id="eventLog" class="event-log"></ol>
+          </section>
+        </aside>
+
+        <section class="chat-pane">
+          <header class="conversation-header">
+            <div>
+              <p class="eyebrow">当前会话</p>
+              <h2 id="conversationTitle">会话 #1</h2>
+            </div>
+            <div class="conversation-meta">
+              <span>游标</span>
+              <strong id="cursorValue">0</strong>
+            </div>
+          </header>
+          <div id="messageList" class="message-list" aria-live="polite">
+            <div id="emptyState" class="empty-state">
+              <i data-lucide="message-square-text"></i>
+              <p>暂无消息</p>
+            </div>
+          </div>
+          <form id="composer" class="composer">
+            <textarea id="messageInput" rows="1" maxlength="1024" placeholder="输入消息" disabled></textarea>
+            <button id="sendButton" class="send-button" type="submit" title="发送消息" disabled>
+              <i data-lucide="send"></i>
+            </button>
+          </form>
+        </section>
+
+        <aside class="legal-agent-pane">
+          <section class="legal-agent-section">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">LEGAL AGENT</p>
+                <h2>法律风险助手</h2>
+              </div>
+              <i data-lucide="shield-check"></i>
+            </div>
+
+            <label class="field">
+              <span>合同正文</span>
+              <textarea id="legalContractText" rows="8" maxlength="12000" placeholder="粘贴线上合同文本，助手会结合当前会话、房源发布信息和法规资料进行风险评估"></textarea>
+            </label>
+
+            <div class="legal-agent-actions">
+              <button id="legalDemoContractButton" class="secondary-button" type="button">
+                <i data-lucide="file-text"></i>
+                <span>填入演示合同</span>
+              </button>
+              <button id="legalRegisterButton" class="primary-button" type="button">
+                <i data-lucide="save"></i>
+                <span>注册合同</span>
+              </button>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span>合同 ID</span>
+                <input id="legalContractIdInput" inputmode="numeric" placeholder="注册后自动填充" />
+              </label>
+              <label class="field">
+                <span>评估 Job</span>
+                <input id="legalJobIdInput" inputmode="numeric" placeholder="发起后自动填充" />
+              </label>
+            </div>
+
+            <div class="legal-agent-actions">
+              <button id="legalAssessButton" class="primary-button" type="button">
+                <i data-lucide="clipboard-check"></i>
+                <span>发起评估</span>
+              </button>
+              <button id="legalRefreshButton" class="secondary-button" type="button">
+                <i data-lucide="refresh-cw"></i>
+                <span>刷新结果</span>
+              </button>
+            </div>
+
+            <div class="legal-agent-status">
+              <span>状态</span>
+              <strong id="legalStatusValue">-</strong>
+            </div>
+            <p id="legalFeedback" class="publish-feedback" aria-live="polite">使用左侧当前用户 ID 和会话 ID 进行租客侧评估。</p>
+          </section>
+
+          <section class="legal-agent-section legal-result-section">
+            <div class="section-heading">
+              <h2>风险提示</h2>
+            </div>
+            <div id="legalRiskEmpty" class="publication-empty">暂无评估结果。</div>
+            <div id="legalRiskList" class="legal-risk-list"></div>
+          </section>
+        </aside>
+      </main>
+
+      <main id="publishWorkspace" class="publication-workspace" hidden>
+        <section class="publication-form-pane">
+          <div class="publish-heading">
+            <div>
+              <p class="eyebrow">HOUSE WORKSPACE</p>
+              <h2>房源发布、审核与租客咨询验证</h2>
+              <p>同一个页面完成房东发布、多图上传、运营审核、租客查看详情并发起聊天。</p>
+            </div>
+            <span class="draft-mark">MVP</span>
+          </div>
+
+          <nav class="sub-nav" aria-label="房源工作台">
+            <button id="landlordTabButton" class="nav-button nav-active" type="button">房东发布</button>
+            <button id="tenantTabButton" class="nav-button" type="button">租客看房</button>
+            <button id="auditTabButton" class="nav-button" type="button">运营审核</button>
+          </nav>
+
+          <section id="landlordPanel">
+            <label class="field token-field">
+              <span>房东访问令牌</span>
+              <input id="publishTokenInput" type="password" autocomplete="off" placeholder="已认证房东 Bearer Token" />
+            </label>
+
+            <form id="publishForm" class="publish-form">
+              <fieldset>
+                <legend>基础信息</legend>
+                <label class="field field-wide">
+                  <span>房源标题</span>
+                  <input name="title" maxlength="128" required placeholder="例如：南山科技园地铁口两居室" />
+                </label>
+                <div class="form-grid form-grid-three">
+                  <label class="field"><span>城市</span><input name="city" maxlength="64" required value="深圳" /></label>
+                  <label class="field"><span>区域</span><input name="district" maxlength="64" required placeholder="南山区" /></label>
+                  <label class="field"><span>出租方式</span><select name="rentType"><option value="whole">整租</option><option value="shared">合租</option></select></label>
+                </div>
+                <label class="field field-wide"><span>详细地址</span><input name="address" maxlength="255" required placeholder="街道、小区、楼栋及房号" /></label>
+              </fieldset>
+
+              <fieldset>
+                <legend>租金与户型</legend>
+                <div class="form-grid form-grid-four">
+                  <label class="field"><span>月租（元）</span><input name="monthlyRent" type="number" min="0.01" step="0.01" required placeholder="5200" /></label>
+                  <label class="field"><span>面积（㎡）</span><input name="areaSqm" type="number" min="0.01" step="0.01" required placeholder="68.5" /></label>
+                  <label class="field"><span>物业费（元/月）</span><input name="propertyFee" type="number" min="0" step="0.01" value="0" /></label>
+                  <label class="field"><span>可入住日期</span><input name="availableFrom" type="date" /></label>
+                </div>
+                <div class="form-grid form-grid-five">
+                  <label class="field"><span>卧室</span><input name="bedroomCount" type="number" min="0" max="20" value="2" /></label>
+                  <label class="field"><span>客厅</span><input name="livingRoomCount" type="number" min="0" max="20" value="1" /></label>
+                  <label class="field"><span>卫生间</span><input name="bathroomCount" type="number" min="0" max="20" value="1" /></label>
+                  <label class="field"><span>押金月数</span><input name="depositMonths" type="number" min="0" max="12" value="1" /></label>
+                  <label class="field"><span>付款周期（月）</span><input name="paymentCycleMonths" type="number" min="1" max="12" value="1" /></label>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>图片、设施与说明</legend>
+                <label class="field field-wide">
+                  <span>上传房源图片</span>
+                  <input id="publishImagesInput" type="file" accept="image/*" multiple />
+                </label>
+                <div id="uploadedImageList" class="uploaded-image-list"></div>
+                <div class="facility-grid">
+                  <label><input type="checkbox" name="facilities" value="空调" checked />空调</label>
+                  <label><input type="checkbox" name="facilities" value="洗衣机" checked />洗衣机</label>
+                  <label><input type="checkbox" name="facilities" value="冰箱" checked />冰箱</label>
+                  <label><input type="checkbox" name="facilities" value="热水器" checked />热水器</label>
+                  <label><input type="checkbox" name="facilities" value="燃气" />燃气</label>
+                  <label><input type="checkbox" name="facilities" value="电梯" />电梯</label>
+                  <label><input type="checkbox" name="facilities" value="阳台" />阳台</label>
+                  <label><input type="checkbox" name="facilities" value="停车位" />停车位</label>
+                </div>
+                <label class="field field-wide"><span>房源描述</span><textarea name="description" maxlength="2000" rows="4" placeholder="采光、交通、装修和周边配套等真实信息"></textarea></label>
+                <label class="field field-wide"><span>租住要求</span><textarea name="rentalRequirements" maxlength="1000" rows="3" placeholder="入住人数、宠物、吸烟、最短租期等"></textarea></label>
+                <label class="field field-wide"><span>封面图片 URL</span><input name="coverImageUrl" type="url" maxlength="1024" placeholder="可留空，默认取第一张上传图" /></label>
+              </fieldset>
+
+              <p id="publishFeedback" class="publish-feedback" aria-live="polite">填写完成后可保存草稿或提交审核。</p>
+              <div class="publish-actions">
+                <button class="secondary-button" type="submit" data-action="draft"><i data-lucide="save"></i>保存草稿</button>
+                <button class="primary-button" type="submit" data-action="submit"><i data-lucide="send"></i>提交审核</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="tenantPanel" hidden>
+            <label class="field token-field">
+              <span>租客访问令牌</span>
+              <input id="tenantTokenInput" type="password" autocomplete="off" placeholder="租客 Bearer Token" />
+            </label>
+            <div class="section-heading">
+              <h2>公开房源</h2>
+              <button id="refreshPublicHousesButton" class="icon-button" type="button" title="刷新公开房源"><i data-lucide="refresh-cw"></i></button>
+            </div>
+            <p id="publicHouseFeedback" class="publish-feedback" aria-live="polite">审核通过的房源会出现在这里。</p>
+            <div id="publicHouseList" class="public-house-list">
+              <div id="publicHouseEmpty" class="publication-empty">暂无公开房源。</div>
+            </div>
+            <article id="houseDetail" class="house-detail" hidden>
+              <div data-detail="gallery" class="detail-gallery"></div>
+              <div class="detail-body">
+                <p data-detail="price" class="preview-price">¥--/月</p>
+                <h3 data-detail="title">请选择房源</h3>
+                <p data-detail="location" class="preview-location"></p>
+                <p data-detail="layout" class="preview-layout"></p>
+                <div data-detail="facilities" class="preview-facilities"></div>
+                <h4>房源描述</h4>
+                <p data-detail="description" class="preview-description"></p>
+                <h4>租住要求</h4>
+                <p data-detail="requirements" class="preview-description"></p>
+                <button id="startChatButton" class="primary-button" type="button" disabled><i data-lucide="message-square-text"></i>联系房东</button>
+                <p id="startChatResult" class="publish-feedback" aria-live="polite"></p>
+              </div>
+            </article>
+          </section>
+
+          <section id="auditPanel" hidden>
+            <label class="field token-field">
+              <span>后台管理员令牌</span>
+              <input id="adminTokenInput" type="password" autocomplete="off" placeholder="userFrom=admin 的 Bearer Token" />
+            </label>
+            <div class="form-grid form-grid-two">
+              <label class="field"><span>发布 ID</span><input id="auditPublishIdInput" inputmode="numeric" placeholder="提交审核后的 publishId" /></label>
+              <label class="field"><span>审核备注</span><input id="auditRemarkInput" maxlength="500" placeholder="可选" /></label>
+            </div>
+            <div class="publish-actions left-actions">
+              <button id="rejectPublicationButton" class="secondary-button danger-button" type="button">驳回</button>
+              <button id="approvePublicationButton" class="primary-button" type="button">通过并发布</button>
+            </div>
+            <p id="auditFeedback" class="publish-feedback" aria-live="polite">通过后，租客公开列表和详情页才会展示该房源。</p>
+          </section>
+        </section>
+
+        <aside class="publication-preview-pane">
+          <section class="preview-section">
+            <div class="section-heading"><h2>实时预览</h2><span class="preview-label">租客视角</span></div>
+            <article class="listing-preview-card">
+              <div class="preview-cover">
+                <img id="previewImage" alt="房源封面预览" hidden />
+                <div id="previewImagePlaceholder" class="preview-placeholder"><i data-lucide="building-2"></i><span>添加房源图片</span></div>
+                <span id="previewPayment" class="payment-chip">押1付1</span>
+              </div>
+              <div class="preview-body">
+                <p id="previewPrice" class="preview-price">¥--/月</p>
+                <h3 id="previewTitle">填写标题后在这里预览</h3>
+                <p id="previewLocation" class="preview-location"><i data-lucide="map-pin"></i>房源位置</p>
+                <p id="previewLayout" class="preview-layout">2室 1厅 1卫 · --㎡</p>
+                <div id="previewFacilities" class="preview-facilities"></div>
+                <div id="previewGallery" class="preview-gallery"></div>
+                <p id="previewDescription" class="preview-description">房源亮点和居住体验会显示在这里。</p>
+              </div>
+            </article>
+          </section>
+
+          <section class="my-publications-section">
+            <div class="section-heading">
+              <div><p class="eyebrow">PORTFOLIO</p><h2>我的房源</h2></div>
+              <button id="refreshPublicationsButton" class="icon-button" type="button" title="刷新"><i data-lucide="refresh-cw"></i></button>
+            </div>
+            <div id="publicationList" class="publication-list">
+              <div id="publicationEmpty" class="publication-empty">输入房东令牌并刷新，查看已保存的房源。</div>
+            </div>
+          </section>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

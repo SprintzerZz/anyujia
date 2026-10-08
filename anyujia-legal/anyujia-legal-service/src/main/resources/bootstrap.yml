@@ -1,0 +1,84 @@
+﻿server:
+  port: ${LEGAL_SERVER_PORT:18086}
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: ${LEGAL_MAX_FILE_SIZE:25MB}
+      max-request-size: ${LEGAL_MAX_REQUEST_SIZE:26MB}
+  config:
+    import:
+      - optional:nacos:anyujia-legal-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+  application:
+    name: anyujia-legal
+  profiles:
+    active: ${RUN_ENV:dev}
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:anyujiadev}
+    password: ${MYSQL_PASSWORD:change-me}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:change-me}
+      database: ${REDIS_DATABASE:0}
+      timeout: ${REDIS_TIMEOUT:5s}
+  cloud:
+    nacos:
+      discovery:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        fail-fast: false
+      config:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+
+legal:
+  document:
+    max-bytes: ${LEGAL_DOCUMENT_MAX_BYTES:26214400}
+    max-pages: ${LEGAL_DOCUMENT_MAX_PAGES:200}
+    max-characters: ${LEGAL_DOCUMENT_MAX_CHARACTERS:500000}
+    max-blocks: ${LEGAL_DOCUMENT_MAX_BLOCKS:5000}
+  memory:
+    redis-enabled: ${LEGAL_MEMORY_REDIS_ENABLED:true}
+    short-term-ttl-seconds: ${LEGAL_MEMORY_SHORT_TERM_TTL_SECONDS:1800}
+    chat-window-limit: ${LEGAL_MEMORY_CHAT_WINDOW_LIMIT:100}
+  ai:
+    enabled: ${LEGAL_AI_ENABLED:false}
+    api-key: ${DASHSCOPE_API_KEY:}
+    base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    chat-model: ${LEGAL_CHAT_MODEL:qwen-plus}
+    connect-timeout-millis: ${LEGAL_AI_CONNECT_TIMEOUT_MILLIS:5000}
+    read-timeout-millis: ${LEGAL_AI_READ_TIMEOUT_MILLIS:30000}
+    failure-threshold: ${LEGAL_AI_FAILURE_THRESHOLD:2}
+    cooldown-seconds: ${LEGAL_AI_COOLDOWN_SECONDS:60}
+    embedding:
+      enabled: ${LEGAL_EMBEDDING_ENABLED:false}
+      model: ${LEGAL_EMBEDDING_MODEL:text-embedding-v4}
+      dimensions: ${LEGAL_EMBEDDING_DIMENSIONS:1024}
+      batch-size: ${LEGAL_EMBEDDING_BATCH_SIZE:16}
+      cache-enabled: ${LEGAL_EMBEDDING_CACHE_ENABLED:true}
+      cache-ttl-seconds: ${LEGAL_EMBEDDING_CACHE_TTL_SECONDS:86400}
+      cache-max-entries: ${LEGAL_EMBEDDING_CACHE_MAX_ENTRIES:2000}
+    vector:
+      enabled: ${LEGAL_VECTOR_ENABLED:false}
+    retrieval:
+      channel-candidate-limit: ${LEGAL_RETRIEVAL_CHANNEL_CANDIDATE_LIMIT:50}
+      rerank-candidate-limit: ${LEGAL_RETRIEVAL_RERANK_CANDIDATE_LIMIT:30}
+      rrf-k: ${LEGAL_RETRIEVAL_RRF_K:60}
+      lexical-weight: ${LEGAL_RETRIEVAL_LEXICAL_WEIGHT:1.0}
+      vector-weight: ${LEGAL_RETRIEVAL_VECTOR_WEIGHT:1.2}
+      intent-weight: ${LEGAL_RETRIEVAL_INTENT_WEIGHT:0.8}
+      rerank-weight: ${LEGAL_RETRIEVAL_RERANK_WEIGHT:0.35}
+
+management.endpoints.web.exposure.include: health,info
+

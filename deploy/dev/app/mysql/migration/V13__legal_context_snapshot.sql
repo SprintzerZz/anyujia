@@ -1,0 +1,26 @@
+CREATE TABLE IF NOT EXISTS `legal_assessment_context_snapshot`
+(
+    `id`                   bigint       NOT NULL,
+    `job_id`               bigint       NOT NULL,
+    `contract_id`          bigint       NOT NULL,
+    `conversation_id`      bigint                DEFAULT NULL,
+    `tenant_id`            bigint       NOT NULL,
+    `region_code`          varchar(32)           DEFAULT NULL,
+    `as_of_date`           date                  DEFAULT NULL,
+    `contract_hash`        char(64)              DEFAULT NULL,
+    `contract_block_count` int          NOT NULL DEFAULT 0,
+    `chat_hash`            char(64)              DEFAULT NULL,
+    `chat_message_count`   int          NOT NULL DEFAULT 0,
+    `chat_message_limit`   int          NOT NULL DEFAULT 0,
+    `product_hash`         char(64)              DEFAULT NULL,
+    `house_publish_id`     bigint                DEFAULT NULL,
+    `retrieval_hash`       char(64)              DEFAULT NULL,
+    `retrieval_query_count` int          NOT NULL DEFAULT 0,
+    `law_passage_count`    int          NOT NULL DEFAULT 0,
+    `context_hash`         char(64)     NOT NULL,
+    `created_at`           datetime(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_legal_context_snapshot_job` (`job_id`),
+    KEY `idx_legal_context_snapshot_contract` (`contract_id`, `created_at`),
+    KEY `idx_legal_context_snapshot_conversation` (`conversation_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Legal assessment bounded context snapshot metadata';

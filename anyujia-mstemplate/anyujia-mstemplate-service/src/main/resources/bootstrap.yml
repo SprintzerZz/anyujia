@@ -1,0 +1,43 @@
+spring:
+  config:
+    import:
+      - optional:nacos:share-redis-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+      - optional:nacos:share-caffeine-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+      - optional:nacos:anyujia-mstemplate-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+  application:
+    name: anyujia-mstemplate
+  profiles:
+    active: ${RUN_ENV:dev}
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:anyujiadev}
+    password: ${MYSQL_PASSWORD:change-me}
+  cloud:
+    nacos:
+      discovery:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        ip: ${NACOS_DISCOVERY_IP:127.0.0.1}
+        fail-fast: false
+      config:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+        shared-configs:
+          - data-id: share-redis-${RUN_ENV:dev}.yaml
+            group: DEFAULT_GROUP
+            refresh: true
+          - data-id: share-caffeine-${RUN_ENV:dev}.yaml
+            group: DEFAULT_GROUP
+            refresh: true
+
+logging:
+  pattern:
+    console: "[%thread] %-5level %logger{36} - %msg%n"

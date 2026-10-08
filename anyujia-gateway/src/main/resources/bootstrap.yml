@@ -1,0 +1,85 @@
+server:
+  port: ${GATEWAY_SERVER_PORT:18080}
+
+spring:
+  config:
+    import:
+      - optional:nacos:share-redis-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+      - optional:nacos:anyujia-gateway-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+  application:
+    name: anyujia-gateway
+  profiles:
+    active: ${RUN_ENV:dev}
+  cloud:
+    nacos:
+      discovery:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        fail-fast: false
+      config:
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:change-me}
+        namespace: frameworkjava-${RUN_ENV:dev}
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        group: DEFAULT_GROUP
+        file-extension: yaml
+        extension-configs:
+          - data-id: ${spring.application.name}-${spring.profiles.active}.yaml
+            group: ${spring.cloud.nacos.config.group}
+            refresh: true
+        shared-configs:
+          - data-id: share-redis-${RUN_ENV:dev}.yaml
+            group: DEFAULT_GROUP
+            refresh: true
+    gateway:
+      routes:
+        - id: anyujia-admin
+          uri: lb://anyujia-admin
+          predicates:
+            - Path=/admin/**
+          filters:
+            - StripPrefix=1
+        - id: anyujia-coupon
+          uri: lb://anyujia-coupon
+          predicates:
+            - Path=/coupon/**
+        - id: anyujia-chat-websocket
+          uri: ${CHAT_WEBSOCKET_URI:lb:ws://anyujia-chat}
+          predicates:
+            - Path=/chat/websocket
+        - id: anyujia-chat
+          uri: lb://anyujia-chat
+          predicates:
+            - Path=/chat/**
+        - id: anyujia-house
+          uri: lb://anyujia-house
+          predicates:
+            - Path=/house/**
+        - id: anyujia-file
+          uri: lb://anyujia-file
+          predicates:
+            - Path=/file/**
+          filters:
+            - StripPrefix=1
+      discovery:
+        locator:
+          enabled: false
+          lower-case-service-id: true
+
+logging:
+  pattern:
+    console: "[%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,threadpool
+
+security:
+  ignore:
+    whites:
+      - /actuator/**

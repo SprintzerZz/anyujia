@@ -1,0 +1,9 @@
+spring:
+  cloud:
+    bootstrap:
+      enabled: false
+    nacos:
+      config:
+        enabled: false
+      discovery:
+        enabled: false

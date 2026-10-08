@@ -1,0 +1,82 @@
+﻿dataSources:
+  ds_0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://frameworkjava-mysql:3306/frameworkjava_coupon_0?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${SHARDING_MYSQL_USERNAME:anyujiadev}
+    password: ${SHARDING_MYSQL_PASSWORD:change-me}
+    maximumPoolSize: 20
+    minimumIdle: 3
+  ds_1:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://frameworkjava-mysql:3306/frameworkjava_coupon_1?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${SHARDING_MYSQL_USERNAME:anyujiadev}
+    password: ${SHARDING_MYSQL_PASSWORD:change-me}
+    maximumPoolSize: 20
+    minimumIdle: 3
+
+rules:
+  - !SHARDING
+    tables:
+      coupon_template:
+        actualDataNodes: ds_${0..1}.coupon_template_${0..1}
+        databaseStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: coupon_template_database_inline
+        tableStrategy:
+          standard:
+            shardingColumn: id
+            shardingAlgorithmName: coupon_template_table_inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+      user_coupon:
+        actualDataNodes: ds_${0..1}.user_coupon_${0..1}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: user_coupon_database_inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: user_coupon_table_inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+    bindingTables:
+      - user_coupon
+    defaultDatabaseStrategy:
+      none:
+    defaultTableStrategy:
+      none:
+    shardingAlgorithms:
+      coupon_template_database_inline:
+        type: INLINE
+        props:
+          algorithm-expression: ds_${id % 2}
+      coupon_template_table_inline:
+        type: INLINE
+        props:
+          algorithm-expression: coupon_template_${id % 2}
+      user_coupon_database_inline:
+        type: INLINE
+        props:
+          algorithm-expression: ds_${user_id % 2}
+      user_coupon_table_inline:
+        type: INLINE
+        props:
+          algorithm-expression: user_coupon_${user_id % 2}
+    keyGenerators:
+      snowflake:
+        type: SNOWFLAKE
+  - !SINGLE
+    tables:
+      - ds_0.coupon_grant_task
+      - ds_0.coupon_grant_fail_record
+    defaultDataSource: ds_0
+
+props:
+  sql-show: false
+

@@ -1,0 +1,394 @@
+#启动命令 docker compose -p frameworkjava -f docker-compose-mid.yml up -d
+#services：定义了服务列表
+services:
+  frameworkjava-mysql:
+    container_name: frameworkjava-mysql
+    image: mysql:8.4.2
+    ports:
+      - "3306:3306"
+    volumes:
+      # 数据挂载
+      - ../data/frameworkjavadata/mysql/data:/var/lib/mysql
+      # 配置初始化sql挂载
+      - ./mysql/init/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./mysql/sql:/opt/sql
+    # 指定启动 MySQL 数据库时的一系列参数，包括设置缓冲池大小、字符集、排序规则、时区、表名大小写规则、时间戳默认行为、服务器 ID、启用二进制日志等。
+    command: [
+      'mysqld',
+      '--innodb-buffer-pool-size=80M',
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--default-time-zone=+8:00',
+      '--lower-case-table-names=1',
+      '--explicit_defaults_for_timestamp=true',
+      '--server-id=1',
+      '--log-bin=mysql-bin',
+      '--binlog-ignore-db=mysql',
+      '--binlog-cache-size=256M',
+      '--binlog-format=ROW',
+      '--max_connections=2000'
+    ]
+    # 设置为always表示容器在退出时总是自动重启。
+    restart: always
+    # 将容器连接到名为frameworkjava_network的网络。
+    networks:
+      - frameworkjava_network
+      # 通过执行特定的 MySQL 命令来检查服务的健康状态 用于测试连接到 MySQL 服务器
+    healthcheck:
+      test: mysql --user=$${MYSQL_APP_USER:-anyujiadev} -h127.0.0.1 --password="$${MYSQL_APP_PASSWORD:-change-me}" -e "SELECT 1;"
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      # 时区上海
+      TZ: Asia/Shanghai
+      # root用户密码
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    # 可以控制容器内进程能够使用的系统资源数
+    ulimits:
+      # 容器内可以同时运行的进程数量上限为 65535
+      nproc: 65535
+      # 用于设置容器内进程可以打开的文件描述符数量限制
+      nofile:
+        #设置软限制为 20000，表示容器内的进程在没有特殊权限的情况下，默认可以打开的文件描述符数量为 20000。
+        soft: 20000
+        # 设置硬限制为 40000，表示容器内的进程无论在什么情况下，最多可以打开的文件描述符数量为 40000。
+        hard: 40000
+  frameworkjava-nacos:
+    container_name: frameworkjava-nacos
+    image: nacos/nacos-server:v2.2.2
+    # 设置 Nacos 的运行模式为独立模式，限制了 Java 虚拟机的内存使用，并指定连接到外置数据库的信息
+    environment:
+      - MODE=standalone
+      - JVM_XMS=512m
+      - JVM_XMX=512m
+      - JVM_XMN=256m
+      - SPRING_DATASOURCE_PLATFORM=mysql
+      - MYSQL_SERVICE_HOST=frameworkjava-mysql
+      - MYSQL_SERVICE_PORT=3306
+      - MYSQL_SERVICE_DB_NAME=frameworkjava_nacos_dev
+      - MYSQL_SERVICE_USER=${MYSQL_APP_USER:-anyujiadev}
+      - MYSQL_SERVICE_PASSWORD=${MYSQL_APP_PASSWORD:-change-me}
+    #  配置日志和 配置文件挂载
+    volumes:
+      - ../data/frameworkjavadata/nacos/logs/:/home/nacos/logs
+      - ../data/frameworkjavadata/nacos/tomcatlogs/:/home/bit/nacos/tomcat/logs/
+      - ./nacos/conf/application.properties:/home/nacos/conf/application.properties
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8848/nacos" ]
+      start_period: 30s
+      interval: 10s
+      timeout: 10s
+      retries: 10
+  frameworkjava-redis:
+    container_name: frameworkjava-redis
+    image: redis:7.0.15
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf
+      - ../data/frameworkjavadata/redis/data:/data
+    # 启动时执行的命令
+    command: redis-server /usr/local/etc/redis/redis.conf
+    restart: always
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  frameworkjava-rabbitmq:
+    image: rabbitmq:3.12.6-management
+    container_name: frameworkjava-rabbitmq
+    restart: always
+    #设置主机名称  集群模式中用于各节点间通信和提高各节点辨识度
+    hostname: frameworkjava-rabbitmq
+    environment:
+      # 用户名
+      RABBITMQ_DEFAULT_USER: admin
+      # 密码
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ../data/frameworkjavadata/rabbitmq/log:/var/log/rabbitmq
+      - ../data/frameworkjavadata/rabbitmq/data:/var/lib/rabbitmq
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: [ "CMD", "rabbitmqctl", "status" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  frameworkjava-admin:
+    container_name: frameworkjava-admin
+    build: ./admin
+    image: frameworkjava-admin:dev
+    environment:
+      RUN_ENV: dev
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC
+      MYSQL_HOST: frameworkjava-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: frameworkjava_dev
+      MYSQL_USERNAME: ${MYSQL_APP_USER:-anyujiadev}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-change-me}
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      NACOS_ADDR: frameworkjava-nacos:8848
+      SPRING_DATA_REDIS_HOST: frameworkjava-redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+    ports:
+      - "18081:18081"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+      frameworkjava-nacos:
+        condition: service_healthy
+      frameworkjava-redis:
+        condition: service_healthy
+      frameworkjava-rabbitmq:
+        condition: service_healthy
+
+  frameworkjava-house:
+    container_name: frameworkjava-house
+    build: ./house
+    image: frameworkjava-house:dev
+    environment:
+      RUN_ENV: dev
+      JAVA_TOOL_OPTIONS: -Xms96m -Xmx192m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC
+      MYSQL_HOST: frameworkjava-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: frameworkjava_dev
+      MYSQL_USERNAME: ${MYSQL_APP_USER:-anyujiadev}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-change-me}
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      NACOS_ADDR: frameworkjava-nacos:8848
+    ports:
+      - "18084:18084"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+      frameworkjava-nacos:
+        condition: service_healthy
+
+  frameworkjava-chat:
+    container_name: frameworkjava-chat
+    build: ./chat
+    image: frameworkjava-chat:dev
+    environment:
+      RUN_ENV: dev
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC
+      MYSQL_HOST: frameworkjava-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: frameworkjava_dev
+      MYSQL_USERNAME: ${MYSQL_APP_USER:-anyujiadev}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-change-me}
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      NACOS_ADDR: frameworkjava-nacos:8848
+      SPRING_DATA_REDIS_HOST: frameworkjava-redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      CHAT_NETTY_ENABLED: "true"
+      CHAT_NETTY_BIND_HOST: 0.0.0.0
+    ports:
+      - "18083:18083"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-admin:
+        condition: service_started
+      frameworkjava-house:
+        condition: service_started
+      frameworkjava-redis:
+        condition: service_healthy
+      frameworkjava-rabbitmq:
+        condition: service_healthy
+
+  frameworkjava-coupon:
+    container_name: frameworkjava-coupon
+    build: ./coupon
+    image: frameworkjava-coupon:dev
+    environment:
+      RUN_ENV: dev
+      SPRING_PROFILES_ACTIVE: dev,sharding
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:MaxMetaspaceSize=256m -XX:+UseG1GC
+      MYSQL_HOST: frameworkjava-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: frameworkjava_dev
+      MYSQL_USERNAME: ${MYSQL_APP_USER:-anyujiadev}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-change-me}
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      NACOS_ADDR: frameworkjava-nacos:8848
+      SPRING_DATA_REDIS_HOST: frameworkjava-redis
+      SPRING_DATA_REDIS_PORT: 6379
+      ROCKETMQ_NAMESRV_ADDR: frameworkjava-rocketmq-namesrv:9876
+    ports:
+      - "18085:18084"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+      frameworkjava-nacos:
+        condition: service_healthy
+      frameworkjava-redis:
+        condition: service_healthy
+      frameworkjava-rocketmq-topic-init:
+        condition: service_completed_successfully
+
+  frameworkjava-gateway:
+    container_name: frameworkjava-gateway
+    build: ./gateway
+    image: frameworkjava-gateway:dev
+    environment:
+      RUN_ENV: dev
+      JAVA_TOOL_OPTIONS: -Xms96m -Xmx192m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC
+      NACOS_ADDR: frameworkjava-nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_HOST: frameworkjava-redis
+      SPRING_DATA_REDIS_PORT: 6379
+      CHAT_WEBSOCKET_URI: ws://frameworkjava-chat:18084
+    ports:
+      - "18080:18080"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-admin:
+        condition: service_started
+      frameworkjava-house:
+        condition: service_started
+      frameworkjava-chat:
+        condition: service_started
+      frameworkjava-coupon:
+        condition: service_started
+
+  frameworkjava-rocketmq-init:
+    image: apache/rocketmq:5.3.2
+    container_name: frameworkjava-rocketmq-init
+    user: root
+    command:
+      - sh
+      - -c
+      - |
+        chown -R rocketmq:rocketmq /namesrv-logs /broker-logs /broker-store
+    volumes:
+      - frameworkjava_rocketmq_namesrv_logs:/namesrv-logs
+      - frameworkjava_rocketmq_broker_logs:/broker-logs
+      - frameworkjava_rocketmq_broker_store:/broker-store
+    restart: "no"
+
+  frameworkjava-rocketmq-namesrv:
+    image: apache/rocketmq:5.3.2
+    container_name: frameworkjava-rocketmq-namesrv
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: -Xms128m -Xmx256m -Xmn64m
+    volumes:
+      - frameworkjava_rocketmq_namesrv_logs:/home/rocketmq/logs
+    restart: always
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/9876'" ]
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      frameworkjava-rocketmq-init:
+        condition: service_completed_successfully
+
+  frameworkjava-rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: frameworkjava-rocketmq-broker
+    command:
+      - sh
+      - -c
+      - |
+        sed "s/__BROKER_IP__/$${ROCKETMQ_BROKER_IP}/g" /opt/rocketmq/broker.conf.template > /tmp/broker.conf
+        sh mqbroker -c /tmp/broker.conf
+    environment:
+      NAMESRV_ADDR: frameworkjava-rocketmq-namesrv:9876
+      ROCKETMQ_BROKER_IP: ${ROCKETMQ_BROKER_IP:-10.1.0.16}
+      JAVA_OPT_EXT: -Xms512m -Xmx768m -Xmn256m -XX:MaxDirectMemorySize=256m
+    ports:
+      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10909:10909"
+      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10911:10911"
+      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10912:10912"
+    volumes:
+      - ./rocketmq/conf/broker.conf.template:/opt/rocketmq/broker.conf.template:ro
+      - frameworkjava_rocketmq_broker_logs:/home/rocketmq/logs
+      - frameworkjava_rocketmq_broker_store:/home/rocketmq/store
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-rocketmq-init:
+        condition: service_completed_successfully
+      frameworkjava-rocketmq-namesrv:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/10911'" ]
+      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  frameworkjava-rocketmq-topic-init:
+    image: apache/rocketmq:5.3.2
+    container_name: frameworkjava-rocketmq-topic-init
+    command:
+      - sh
+      - -c
+      - |
+        sh mqadmin updateTopic -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -t coupon-redeem-topic -r 8 -w 8
+        sh mqadmin updateSubGroup -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -g coupon-redeem-consumer-group
+        sh mqadmin updateTopic -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -t coupon-grant-topic -r 8 -w 8
+        sh mqadmin updateSubGroup -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -g coupon-grant-consumer-group
+        sh mqadmin updateTopic -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -t coupon-expire-topic -r 8 -w 8
+        sh mqadmin updateSubGroup -n frameworkjava-rocketmq-namesrv:9876 -c DefaultCluster -g coupon-expire-consumer-group
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-rocketmq-broker:
+        condition: service_healthy
+    restart: "no"
+
+# 配置声明了一个可以供相关容器接入的网络
+networks:
+  frameworkjava_network:
+
+volumes:
+  frameworkjava_rocketmq_namesrv_logs:
+  frameworkjava_rocketmq_broker_logs:
+  frameworkjava_rocketmq_broker_store:
