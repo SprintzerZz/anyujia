@@ -1,5 +1,6 @@
 package com.anyujia.anyujiachatapi.feign;
 
+import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationContextReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationGetReqDTO;
@@ -65,6 +66,11 @@ public interface ChatFeignClient {
     ApiResult<MessageVO> send(@RequestHeader("userId") Long userId,
                               @RequestHeader("userFrom") String userFrom,
                               @RequestBody MessageSendReqDTO request);
+
+    @PostMapping("/agent/message")
+    ApiResult<MessageVO> sendAgentMessage(@RequestHeader("userId") Long userId,
+                                          @RequestHeader("userFrom") String userFrom,
+                                          @RequestBody AgentMessageReqDTO request);
 
     @PostMapping("/message/batch_visited")
     ApiResult<Void> visited(@RequestHeader("userId") Long userId,

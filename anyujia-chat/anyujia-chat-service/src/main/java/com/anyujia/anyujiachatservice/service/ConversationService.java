@@ -1,5 +1,6 @@
 package com.anyujia.anyujiachatservice.service;
 
+import com.anyujia.anyujiachatapi.domain.dto.AgentSessionCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationContextReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationGetReqDTO;
@@ -12,6 +13,7 @@ import java.util.List;
 
 public interface ConversationService {
     ConversationCreateVO create(Long userId, Integer userType, ConversationCreateReqDTO request);
+    ConversationCreateVO createAgentSession(Long userId, AgentSessionCreateReqDTO request);
     ConversationCreateVO get(Long userId, Integer userType, ConversationGetReqDTO request);
     List<ConversationVO> list(Long userId, ConversationListReqDTO request);
     boolean hasHouse(Long userId, ConversationHouseReqDTO request);

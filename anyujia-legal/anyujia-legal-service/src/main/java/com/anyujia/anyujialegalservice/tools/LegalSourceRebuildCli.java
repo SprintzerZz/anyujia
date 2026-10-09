@@ -1,4 +1,4 @@
-﻿package com.anyujia.anyujialegalservice.tools;
+package com.anyujia.anyujialegalservice.tools;
 
 import com.anyujia.anyujialegalservice.service.LegalSourceChunker;
 import java.io.StringReader;
@@ -37,14 +37,14 @@ public final class LegalSourceRebuildCli {
 
     public static void main(String[] args) throws Exception {
         boolean apply = args.length == 1 && "--apply".equals(args[0]);
-        String civilText = between(fetchText(CIVIL_CODE_URL), "绗洓鐧惧叚鍗佷笁鏉?, "绗洓缂?);
+        String civilText = between(fetchText(CIVIL_CODE_URL), "第四百六十三条", "第四编");
         String rentalPage = fetchText(RENTAL_REGULATION_URL);
-        String rentalText = betweenInclusive(rentalPage, "绗竴鏉?, "鏈潯渚嬭嚜2025骞?鏈?5鏃ヨ捣鏂借銆?);
+        String rentalText = betweenInclusive(rentalPage, "第一条", "本条例自2025年9月25日起施行。");
         LegalSourceChunker chunker = new LegalSourceChunker();
         List<LegalSourceChunker.LawChunk> civilChunks = chunker.split(civilText);
         List<LegalSourceChunker.LawChunk> rentalChunks = chunker.split(rentalText);
-        validate(civilChunks, 526, "绗洓鐧惧叚鍗佷笁鏉?, "绗節鐧惧叓鍗佸叓鏉?);
-        validate(rentalChunks, 50, "绗竴鏉?, "绗簲鍗佹潯");
+        validate(civilChunks, 526, "第四百六十三条", "第九百八十八条");
+        validate(rentalChunks, 50, "第一条", "第五十条");
 
         String jdbcUrl = "jdbc:mysql://" + LegalEmbeddingBackfillCli.env("MYSQL_HOST", "127.0.0.1")
                 + ":" + LegalEmbeddingBackfillCli.env("MYSQL_PORT", "3306") + "/"
@@ -109,7 +109,7 @@ public final class LegalSourceRebuildCli {
                 }
             }
         }, true);
-        return text.toString().replace('\u00a0', ' ').replaceAll("[ \\t]+", " ")
+        return text.toString().replace(' ', ' ').replaceAll("[ \\t]+", " ")
                 .replaceAll("\\n{2,}", "\n").trim();
     }
 
@@ -250,4 +250,3 @@ public final class LegalSourceRebuildCli {
         void setEmbeddingJson(String value) { this.embeddingJson = value; }
     }
 }
-

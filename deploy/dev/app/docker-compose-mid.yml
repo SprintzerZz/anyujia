@@ -230,6 +230,37 @@ services:
       frameworkjava-rabbitmq:
         condition: service_healthy
 
+  frameworkjava-legal:
+    container_name: frameworkjava-legal
+    build: ./legal
+    image: frameworkjava-legal:dev
+    environment:
+      RUN_ENV: dev
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseG1GC
+      MYSQL_HOST: frameworkjava-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: frameworkjava_dev
+      MYSQL_USERNAME: ${MYSQL_APP_USER:-anyujiadev}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:-change-me}
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      NACOS_ADDR: frameworkjava-nacos:8848
+      REDIS_HOST: frameworkjava-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: change-me
+    ports:
+      - "18086:18086"
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+      frameworkjava-nacos:
+        condition: service_healthy
+      frameworkjava-redis:
+        condition: service_healthy
+
   frameworkjava-coupon:
     container_name: frameworkjava-coupon
     build: ./coupon
@@ -383,6 +414,96 @@ services:
       frameworkjava-rocketmq-broker:
         condition: service_healthy
     restart: "no"
+
+  frameworkjava-milvus-etcd:
+    container_name: frameworkjava-milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ../data/frameworkjavadata/milvus/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    restart: always
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  frameworkjava-milvus-minio:
+    container_name: frameworkjava-milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ../data/frameworkjavadata/milvus/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    restart: always
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  frameworkjava-milvus:
+    container_name: frameworkjava-milvus
+    image: milvusdb/milvus:v2.5.9
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: frameworkjava-milvus-etcd:2379
+      MINIO_ADDRESS: frameworkjava-milvus-minio:9000
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - ../data/frameworkjavadata/milvus/data:/var/lib/milvus
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-milvus-etcd:
+        condition: service_healthy
+      frameworkjava-milvus-minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+
+  frameworkjava-legal-embedding:
+    container_name: frameworkjava-legal-embedding
+    build: ./embedding
+    image: frameworkjava-legal-embedding:dev
+    environment:
+      EMBEDDING_DEVICE: cpu
+      LEGAL_LOCAL_EMBEDDING_MODEL: BAAI/bge-large-zh-v1.5
+      LEGAL_LOCAL_RERANKER_MODEL: BAAI/bge-reranker-v2-m3
+    ports:
+      - "18091:18091"
+    volumes:
+      - ../data/frameworkjavadata/embedding/models:/models
+    restart: always
+    networks:
+      - frameworkjava_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
 # 配置声明了一个可以供相关容器接入的网络
 networks:

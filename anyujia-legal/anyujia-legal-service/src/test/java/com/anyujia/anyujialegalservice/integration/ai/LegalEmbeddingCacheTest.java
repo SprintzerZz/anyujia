@@ -33,9 +33,9 @@ class LegalEmbeddingCacheTest {
         ObjectMapper objectMapper = new ObjectMapper();
 
         new LegalEmbeddingCache(properties, redissonClient, objectMapper)
-                .put("same-risk-query", new double[]{0.25D, 0.75D});
+                .put("model:1024", "same-risk-query", new double[]{0.25D, 0.75D});
         var restored = new LegalEmbeddingCache(properties, redissonClient, objectMapper)
-                .get("same-risk-query");
+                .get("model:1024", "same-risk-query");
 
         assertThat(restored).isPresent();
         assertThat(restored.orElseThrow()).containsExactly(0.25D, 0.75D);
@@ -69,8 +69,8 @@ class LegalEmbeddingCacheTest {
 
         LegalEmbeddingCache cache = new LegalEmbeddingCache(properties, failingProvider, new ObjectMapper());
 
-        cache.put("same-risk-query", new double[]{0.5D, 0.5D});
-        var restored = cache.get("same-risk-query");
+        cache.put("model:1024", "same-risk-query", new double[]{0.5D, 0.5D});
+        var restored = cache.get("model:1024", "same-risk-query");
 
         assertThat(restored).isPresent();
         assertThat(restored.orElseThrow()).containsExactly(0.5D, 0.5D);

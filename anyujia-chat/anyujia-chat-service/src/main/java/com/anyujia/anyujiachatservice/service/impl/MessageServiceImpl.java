@@ -1,12 +1,15 @@
 package com.anyujia.anyujiachatservice.service.impl;
 
 import com.anyujia.anyujiachatapi.constants.ChatConstants;
+import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageListReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageReadReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSendReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSyncReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageVisitedReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
+import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversation;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversationMember;
@@ -21,6 +24,8 @@ import com.anyujia.anyujiachatservice.service.MessageService;
 import com.anyujia.anyujiachatservice.realtime.ChatMessagePublisher;
 import com.anyujia.anyujiachatservice.service.moderation.ChatContentModerationService;
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
+import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequenceAllocator;
+import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -30,6 +35,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -51,7 +57,10 @@ public class MessageServiceImpl implements MessageService {
     private final RecentMessageCache recentMessageCache;
     private final ChatContentModerationService contentModerationService;
     private final ConversationRateLimiter conversationRateLimiter;
+    private final RedisConversationSequenceAllocator sequenceAllocator;
+    private final ChatUnreadService unreadService;
     private final ChatMetrics chatMetrics;
+    private final LegalAgentFeignClient legalAgentFeignClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -60,6 +69,7 @@ public class MessageServiceImpl implements MessageService {
         try {
             validateType(request.getType());
             Long recipientId = memberService.requireCounterparty(request.getSessionId(), userId);
+            boolean agentConversation = ChatConstants.AGENT_USER_ID == recipientId;
             ChatMessage existing = findByClientId(userId, request.getClientMessageId());
             if (existing != null) {
                 return toVO(existing);
@@ -91,28 +101,70 @@ public class MessageServiceImpl implements MessageService {
                         .eq(ChatConversation::getId, request.getSessionId())
                         .set(ChatConversation::getLastMessageId, message.getId())
                         .set(ChatConversation::getLastMessageSeq, message.getConversationSeq())
+                        .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
                         .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
                         .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
-                if (memberMapper.incrementUnread(request.getSessionId(), recipientId) != 1) {
-                    throw new ServiceException("Conversation recipient data is incomplete");
+                if (!agentConversation) {
+                    unreadService.increment(recipientId, request.getSessionId());
                 }
                 long messageTime = toEpochMilli(message.getCreatedAt());
                 int updatedIndexes = userConversationMapper.touchMessage(userId, request.getSessionId(), message.getId(),
-                        message.getConversationSeq(), messageTime, 0)
-                        + userConversationMapper.touchMessage(recipientId, request.getSessionId(), message.getId(),
-                        message.getConversationSeq(), messageTime, 1);
-                if (updatedIndexes != 2) {
+                        message.getConversationSeq(), messageTime);
+                if (!agentConversation) {
+                    updatedIndexes += userConversationMapper.touchMessage(recipientId, request.getSessionId(), message.getId(),
+                            message.getConversationSeq(), messageTime);
+                }
+                if (updatedIndexes != (agentConversation ? 1 : 2)) {
                     throw new ServiceException("User conversation index is incomplete");
                 }
             } finally {
                 chatMetrics.recordDbWrite(dbStart);
             }
             MessageVO result = toVO(message);
-            publishAfterCommit(recipientId, result);
+            if (agentConversation) {
+                dispatchAgentReplyAfterCommit(userId, request.getSessionId(), request.getContent());
+            } else {
+                publishAfterCommit(recipientId, result);
+            }
             return result;
         } finally {
             chatMetrics.recordSend(sendStart);
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MessageVO sendAgentMessage(Long userId, AgentMessageReqDTO request) {
+        ChatConversation conversation = conversationMapper.selectById(request.getChatConversationId());
+        if (conversation == null || !Integer.valueOf(ChatConstants.CONVERSATION_TYPE_AGENT)
+                .equals(conversation.getConversationType())) {
+            throw new ServiceException("Agent conversation does not exist", ResultCode.INVALID_PARA.getCode());
+        }
+        Long tenantId = conversation.getTenantUserId();
+        ChatMessage message = new ChatMessage();
+        message.setConversationId(request.getChatConversationId());
+        message.setConversationSeq(allocateConversationSequence(request.getChatConversationId()));
+        message.setSenderId(ChatConstants.AGENT_USER_ID);
+        message.setRecipientId(tenantId);
+        message.setType(0);
+        message.setContent(bounded(request.getContent(), 1024));
+        message.setStatus(ChatConstants.MESSAGE_UNREAD);
+        message.setVisited(ChatConstants.MESSAGE_NOT_VISITED);
+        message.setCreatedAt(LocalDateTime.now());
+        messageMapper.insert(message);
+        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
+                .eq(ChatConversation::getId, request.getChatConversationId())
+                .set(ChatConversation::getLastMessageId, message.getId())
+                .set(ChatConversation::getLastMessageSeq, message.getConversationSeq())
+                .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
+                .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
+                .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
+        unreadService.increment(tenantId, request.getChatConversationId());
+        userConversationMapper.touchMessage(tenantId, request.getChatConversationId(), message.getId(),
+                message.getConversationSeq(), toEpochMilli(message.getCreatedAt()));
+        MessageVO result = toVO(message);
+        publishAfterCommit(tenantId, result);
+        return result;
     }
 
     @Override
@@ -180,6 +232,7 @@ public class MessageServiceImpl implements MessageService {
     @Transactional(rollbackFor = Exception.class)
     public void markVisited(Long userId, MessageVisitedReqDTO request) {
         ChatConversationMember member = memberService.requireMember(request.getSessionId(), userId);
+        unreadService.reset(userId, request.getSessionId());
         ChatMessage latest = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getConversationId, request.getSessionId())
                 .orderByDesc(ChatMessage::getConversationSeq)
@@ -256,6 +309,15 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private Long allocateConversationSequence(Long conversationId) {
+        try {
+            return sequenceAllocator.next(conversationId);
+        } catch (RuntimeException ex) {
+            log.warn("Redis sequence allocation failed, falling back to DB, conversationId={}", conversationId, ex);
+            return allocateConversationSequenceFromDb(conversationId);
+        }
+    }
+
+    private Long allocateConversationSequenceFromDb(Long conversationId) {
         Long current = conversationMapper.selectNextMessageSeqForUpdate(conversationId);
         if (current == null) {
             throw new ServiceException("Conversation does not exist", ResultCode.INVALID_PARA.getCode());
@@ -326,5 +388,35 @@ public class MessageServiceImpl implements MessageService {
             log.error("Chat message persisted but online push failed, messageId={}, recipientId={}",
                     message.getMessageId(), recipientId, ex);
         }
+    }
+
+    private void dispatchAgentReplyAfterCommit(Long userId, Long conversationId, String query) {
+        Runnable dispatch = () -> {
+            try {
+                LegalAgentAnswerReqDTO request = new LegalAgentAnswerReqDTO();
+                request.setChatConversationId(conversationId);
+                request.setQuery(query);
+                legalAgentFeignClient.answer(userId, ChatConstants.USER_TYPE_TENANT, "app", request);
+            } catch (Exception ex) {
+                log.error("Legal agent reply dispatch failed, conversationId={}", conversationId, ex);
+            }
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            CompletableFuture.runAsync(dispatch);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                CompletableFuture.runAsync(dispatch);
+            }
+        });
+    }
+
+    private String bounded(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.substring(0, Math.min(value.length(), maxLength));
     }
 }

@@ -29,7 +29,13 @@ public class CouponExpireProducer {
     @Value("${coupon.time-zone:Asia/Shanghai}")
     private String timeZone;
 
+    @Value("${coupon.expire.enabled:true}")
+    private boolean expireEnabled;
+
     public void sendExpireMessage(UserCoupon coupon, CouponTemplate template) {
+        if (!expireEnabled) {
+            return;
+        }
         if (coupon == null || coupon.getId() == null || template == null || template.getValidEndTime() == null) {
             return;
         }

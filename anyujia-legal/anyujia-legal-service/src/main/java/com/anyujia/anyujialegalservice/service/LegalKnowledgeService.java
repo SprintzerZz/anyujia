@@ -20,7 +20,12 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +37,7 @@ public class LegalKnowledgeService {
     private final LegalSourceChunker chunker;
     private final LegalEmbeddingClient embeddingClient;
     private final ObjectMapper objectMapper;
+    private final ObjectProvider<LegalVectorStore> vectorStoreProvider;
 
     @Transactional(rollbackFor = Exception.class)
     public LegalSourceVO ingest(LegalSourceIngestReqDTO request) {
@@ -72,15 +78,18 @@ public class LegalKnowledgeService {
         source.setCreatedAt(LocalDateTime.now());
         source.setUpdatedAt(source.getCreatedAt());
         sourceMapper.insert(source);
+        LegalVectorStore vectorStore = vectorStoreProvider.getIfAvailable();
         for (int i = 0; i < chunks.size(); i++) {
             LegalSourceChunker.LawChunk chunk = chunks.get(i);
+            Optional<double[]> vector = embeddingClient.embed(chunk.text());
             LegalSourceChunk entity = new LegalSourceChunk();
             entity.setSourceId(source.getId());
             entity.setChunkIndex(i);
             entity.setArticleNumber(chunk.articleLabel());
             entity.setChunkText(chunk.text());
-            entity.setEmbeddingJson(embeddingClient.embed(chunk.text()).map(this::toJson).orElse(null));
+            entity.setEmbeddingJson(vector.map(this::toJson).orElse(null));
             chunkMapper.insert(entity);
+            vector.ifPresent(value -> upsertToVectorStore(vectorStore, entity, source, value));
         }
         int embedded = Math.toIntExact(chunkMapper.selectCount(new LambdaQueryWrapper<LegalSourceChunk>()
                 .eq(LegalSourceChunk::getSourceId, source.getId())
@@ -94,16 +103,21 @@ public class LegalKnowledgeService {
                 .isNull(LegalSourceChunk::getEmbeddingJson)
                 .orderByAsc(LegalSourceChunk::getId)
                 .last("LIMIT " + limit));
+        LegalVectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        Map<Long, LegalSource> sourcesById = chunks.isEmpty() ? Map.of()
+                : sourceMapper.selectList(new LambdaQueryWrapper<LegalSource>()
+                        .in(LegalSource::getId, chunks.stream()
+                                .map(LegalSourceChunk::getSourceId).distinct().toList()))
+                .stream().collect(Collectors.toMap(LegalSource::getId, Function.identity()));
         int embedded = 0;
         for (LegalSourceChunk chunk : chunks) {
-            String embeddingJson = embeddingClient.embed(chunk.getChunkText())
-                    .map(this::toJson)
-                    .orElse(null);
-            if (embeddingJson == null) {
+            Optional<double[]> vector = embeddingClient.embed(chunk.getChunkText());
+            if (vector.isEmpty()) {
                 continue;
             }
-            chunk.setEmbeddingJson(embeddingJson);
+            chunk.setEmbeddingJson(toJson(vector.get()));
             chunkMapper.updateById(chunk);
+            upsertToVectorStore(vectorStore, chunk, sourcesById.get(chunk.getSourceId()), vector.get());
             embedded++;
         }
         EmbeddingBackfillVO result = new EmbeddingBackfillVO();
@@ -113,6 +127,15 @@ public class LegalKnowledgeService {
         result.setRemainingCount(chunkMapper.selectCount(new LambdaQueryWrapper<LegalSourceChunk>()
                 .isNull(LegalSourceChunk::getEmbeddingJson)));
         return result;
+    }
+
+    private void upsertToVectorStore(LegalVectorStore vectorStore, LegalSourceChunk chunk,
+                                     LegalSource source, double[] vector) {
+        if (vectorStore == null || source == null || vector == null || vector.length == 0) {
+            return;
+        }
+        vectorStore.upsert(chunk.getId(), chunk.getSourceId(), chunk.getArticleNumber(),
+                source.getTitle(), source.getSourceUrl(), source.getRegionCode(), vector);
     }
 
     private LegalSourceVO toVO(LegalSource source, int chunkCount, int embeddedChunkCount) {

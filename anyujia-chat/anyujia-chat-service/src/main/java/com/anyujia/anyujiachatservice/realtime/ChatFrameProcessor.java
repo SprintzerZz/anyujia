@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class ChatFrameProcessor {
     private final MessageService messageService;
     private final Validator validator;
     private final ObjectMapper objectMapper;
+    private final ChatDeliveryAckService deliveryAckService;
 
     public void process(Long userId, String payload, Consumer<String> response) {
         ChatFrameDTO<?> frame;
@@ -34,6 +36,13 @@ public class ChatFrameProcessor {
         }
         if ("heart_beat".equalsIgnoreCase(frame.getType())) {
             respond(response, new ChatFrameDTO<>("heart_beat", "pong"));
+            return;
+        }
+        if ("delivery_ack".equalsIgnoreCase(frame.getType())) {
+            String messageId = extractMessageId(frame);
+            if (messageId != null) {
+                deliveryAckService.ack(userId, messageId);
+            }
             return;
         }
         if (!"chat".equalsIgnoreCase(frame.getType())) {
@@ -54,6 +63,14 @@ public class ChatFrameProcessor {
         }
         MessageVO saved = messageService.send(userId, request);
         respond(response, new ChatFrameDTO<>("chat_ack", saved));
+    }
+
+    private String extractMessageId(ChatFrameDTO<?> frame) {
+        if (frame.getData() instanceof Map<?, ?> data) {
+            Object messageId = data.get("messageId");
+            return messageId == null ? null : String.valueOf(messageId);
+        }
+        return null;
     }
 
     private void respond(Consumer<String> response, ChatFrameDTO<?> frame) {

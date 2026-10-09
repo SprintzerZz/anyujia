@@ -33,6 +33,14 @@ public class LegalAiProperties {
     private Vector vector = new Vector();
     @Valid
     private Retrieval retrieval = new Retrieval();
+    @Valid
+    private Milvus milvus = new Milvus();
+    @Valid
+    private LocalEmbedding localEmbedding = new LocalEmbedding();
+    @Valid
+    private LocalReranker localReranker = new LocalReranker();
+    @Valid
+    private Agent agent = new Agent();
 
     @Data
     public static class Embedding {
@@ -76,5 +84,59 @@ public class LegalAiProperties {
         private double intentWeight = 0.8D;
         @DecimalMin("0.0")
         private double rerankWeight = 0.35D;
+    }
+
+    @Data
+    public static class Milvus {
+        private boolean enabled;
+        private String host = "127.0.0.1";
+        @Min(1)
+        @Max(65535)
+        private int port = 19530;
+        private String database = "default";
+        @NotBlank
+        private String collection = "legal_source_chunk_v1";
+        @Min(64)
+        @Max(4096)
+        private int dimension = 1024;
+        @Min(1)
+        @Max(500)
+        private int topK = 50;
+        @Min(100)
+        private long connectTimeoutMillis = 10000;
+    }
+
+    @Data
+    public static class LocalEmbedding {
+        private boolean enabled;
+        @NotBlank
+        private String endpoint = "http://127.0.0.1:18091/embed";
+        @NotBlank
+        private String model = "BAAI/bge-large-zh-v1.5";
+        @Min(64)
+        @Max(4096)
+        private int dimensions = 1024;
+    }
+
+    @Data
+    public static class LocalReranker {
+        private boolean enabled;
+        @NotBlank
+        private String endpoint = "http://127.0.0.1:18091/rerank";
+        @NotBlank
+        private String model = "BAAI/bge-reranker-v2-m3";
+        @Min(1)
+        @Max(50)
+        private int topN = 8;
+    }
+
+    @Data
+    public static class Agent {
+        @Min(1)
+        @Max(200)
+        private int historyLimit = 20;
+        @Min(1)
+        @Max(5000)
+        private int answerMaxLength = 1024;
     }
 }

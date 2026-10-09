@@ -36,7 +36,7 @@ public class CouponGrantBatchConsumer implements RocketMQListener<CouponGrantBat
     @Override
     public void onMessage(CouponGrantBatchEvent event) {
         String doneKey = DONE_KEY + event.batchId();
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(doneKey))) {
+        if (redisTemplate.hasKey(doneKey)) {
             return;
         }
         String processingKey = PROCESSING_KEY + event.batchId();
@@ -45,9 +45,9 @@ public class CouponGrantBatchConsumer implements RocketMQListener<CouponGrantBat
         }
         try {
             persistenceService.persist(event);
+            redisTemplate.opsForValue().set(doneKey, "1", IDEMPOTENT_TTL);
             redisTemplate.opsForSet().remove(TASK_USER_SET_KEY.formatted(event.taskId()),
                     (Object[]) event.userIds().stream().map(String::valueOf).toArray(String[]::new));
-            redisTemplate.opsForValue().set(doneKey, "1", IDEMPOTENT_TTL);
         } catch (CouponStockConflictException ex) {
             couponGrantTaskMapper.updateStatus(event.taskId(), CouponConstants.GRANT_TASK_FAILED, "库存不足，批次发放失败");
             log.error("Coupon grant rejected by database, taskId={}, batchId={}", event.taskId(), event.batchId(), ex);

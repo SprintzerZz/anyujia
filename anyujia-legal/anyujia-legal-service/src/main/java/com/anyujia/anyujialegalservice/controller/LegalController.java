@@ -13,6 +13,8 @@ import com.anyujia.anyujialegalservice.service.LegalDocumentIngestionService;
 import com.anyujia.anyujialegalservice.service.LegalKnowledgeService;
 import com.anyujia.anyujialegalservice.service.LegalKnowledgeSearchService;
 import com.anyujia.anyujialegalservice.service.LegalAnswerService;
+import com.anyujia.anyujialegalservice.service.LegalAgentConversationService;
+import com.anyujia.anyujialegalservice.service.LegalAgentService;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
@@ -30,7 +32,10 @@ import com.anyujia.anyujialegalapi.domain.vo.LegalSourceVO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalSearchReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalSearchVO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAnswerReqDTO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentBindReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAnswerVO;
+import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
 
 @RestController
 @RequestMapping("/legal")
@@ -42,6 +47,8 @@ public class LegalController implements LegalFeignClient {
     private final LegalKnowledgeService knowledgeService;
     private final LegalKnowledgeSearchService knowledgeSearchService;
     private final LegalAnswerService legalAnswerService;
+    private final LegalAgentService legalAgentService;
+    private final LegalAgentConversationService legalAgentConversationService;
 
     @PostMapping("/contracts/upload")
     public ApiResult<ContractVO> uploadContract(@RequestHeader("userId") Long userId,
@@ -102,6 +109,23 @@ public class LegalController implements LegalFeignClient {
                                                     @RequestBody @Valid LegalAnswerReqDTO request) {
         requireInternal(userFrom);
         return ApiResult.success(legalAnswerService.answer(request));
+    }
+
+    @PostMapping("/agent/answer")
+    public ApiResult<LegalAgentAnswerVO> answerAgent(@RequestHeader("userId") Long userId,
+                                                     @RequestHeader("userType") Integer userType,
+                                                     @RequestHeader("userFrom") String userFrom,
+                                                     @RequestBody @Valid LegalAgentAnswerReqDTO request) {
+        requireTenant(userType, userFrom);
+        return ApiResult.success(legalAgentService.answer(userId, request));
+    }
+
+    @PostMapping("/agent/bind")
+    public ApiResult<Void> bindAgent(@RequestHeader("userFrom") String userFrom,
+                                     @RequestBody @Valid LegalAgentBindReqDTO request) {
+        requireInternal(userFrom);
+        legalAgentConversationService.bind(request);
+        return ApiResult.success();
     }
 
     private void requireInternal(String userFrom) {

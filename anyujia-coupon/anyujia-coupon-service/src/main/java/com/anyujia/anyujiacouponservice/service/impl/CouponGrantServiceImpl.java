@@ -32,6 +32,8 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -77,7 +79,7 @@ public class CouponGrantServiceImpl implements CouponGrantService {
 
         String redisKey = TASK_USER_SET_KEY.formatted(task.getId());
         redisTemplate.opsForSet().add(redisKey, userIds.stream().map(String::valueOf).toArray(String[]::new));
-        dispatch(task.getId(), templateId, userType, new ArrayList<>(userIds));
+        dispatchAfterCommit(task.getId(), templateId, userType, new ArrayList<>(userIds));
         return task.getId();
     }
 
@@ -106,6 +108,20 @@ public class CouponGrantServiceImpl implements CouponGrantService {
                         "任务长时间未推进，请检查MQ消费状态");
             }
         }
+    }
+
+    private void dispatchAfterCommit(Long taskId, Long templateId, Integer userType, List<Long> userIds) {
+        Runnable task = () -> dispatch(taskId, templateId, userType, userIds);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            task.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                task.run();
+            }
+        });
     }
 
     private void dispatch(Long taskId, Long templateId, Integer userType, List<Long> userIds) {

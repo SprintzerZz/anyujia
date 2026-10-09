@@ -14,4 +14,13 @@ public interface ChatConversationMemberMapper extends BaseMapper<ChatConversatio
              WHERE conversation_id = #{conversationId} AND user_id = #{userId}
             """)
     int incrementUnread(@Param("conversationId") Long conversationId, @Param("userId") Long userId);
+
+    @Update("""
+            UPDATE chat_conversation_member
+               SET unread_count = #{unreadCount}, updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = #{userId} AND conversation_id = #{conversationId}
+            """)
+    int updateUnread(@Param("userId") Long userId,
+                     @Param("conversationId") Long conversationId,
+                     @Param("unreadCount") long unreadCount);
 }

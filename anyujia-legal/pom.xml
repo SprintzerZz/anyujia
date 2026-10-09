@@ -23,6 +23,7 @@
         <lombok.version>1.18.38</lombok.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <poi.version>5.4.1</poi.version>
+        <milvus-sdk-java.version>2.6.22</milvus-sdk-java.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -46,6 +47,11 @@
                 <version>${spring-cloud-alibaba.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.milvus</groupId>
+                <artifactId>milvus-sdk-java</artifactId>
+                <version>${milvus-sdk-java.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

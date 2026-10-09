@@ -45,7 +45,6 @@ public interface ChatUserConversationMapper {
                SET last_message_id = #{messageId},
                    last_message_seq = #{messageSeq},
                    last_message_time = #{messageTime},
-                   unread_count = unread_count + #{unreadIncrement},
                    updated_at = CURRENT_TIMESTAMP
              WHERE user_id = #{userId}
                AND conversation_id = #{conversationId}
@@ -54,8 +53,7 @@ public interface ChatUserConversationMapper {
                      @Param("conversationId") Long conversationId,
                      @Param("messageId") Long messageId,
                      @Param("messageSeq") Long messageSeq,
-                     @Param("messageTime") Long messageTime,
-                     @Param("unreadIncrement") int unreadIncrement);
+                     @Param("messageTime") Long messageTime);
 
     @Update("""
             UPDATE chat_user_conversation
@@ -70,4 +68,14 @@ public interface ChatUserConversationMapper {
                     @Param("userId") Long userId,
                     @Param("messageId") Long messageId,
                     @Param("messageSeq") Long messageSeq);
+
+    @Update("""
+            UPDATE chat_user_conversation
+               SET unread_count = #{unreadCount}, updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = #{userId}
+               AND conversation_id = #{conversationId}
+            """)
+    int updateUnread(@Param("userId") Long userId,
+                     @Param("conversationId") Long conversationId,
+                     @Param("unreadCount") long unreadCount);
 }

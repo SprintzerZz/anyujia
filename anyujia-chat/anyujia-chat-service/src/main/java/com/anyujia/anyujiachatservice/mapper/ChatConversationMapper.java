@@ -26,6 +26,13 @@ public interface ChatConversationMapper extends BaseMapper<ChatConversation> {
             """)
     Long selectNextMessageSeqForUpdate(@Param("conversationId") Long conversationId);
 
+    @Select("""
+            SELECT next_message_seq
+              FROM chat_conversation
+             WHERE id = #{conversationId}
+            """)
+    Long selectNextMessageSeq(@Param("conversationId") Long conversationId);
+
     @Update("""
             UPDATE chat_conversation
                SET next_message_seq = #{nextSequence}

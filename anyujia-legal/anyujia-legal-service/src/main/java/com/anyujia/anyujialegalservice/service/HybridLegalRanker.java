@@ -11,7 +11,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.ToDoubleFunction;
 import java.util.stream.Collectors;
@@ -36,14 +35,15 @@ public class HybridLegalRanker {
     );
 
     private final LegalAiProperties properties;
+    private final LegalReranker reranker;
 
-    public HybridLegalRanker(LegalAiProperties properties) {
+    public HybridLegalRanker(LegalAiProperties properties, LegalReranker reranker) {
         this.properties = properties;
+        this.reranker = reranker;
     }
 
     public List<LawPassage> rank(String query, Map<Long, LegalSource> sources,
-                                 List<LegalSourceChunk> chunks, Optional<double[]> queryVector,
-                                 Map<Long, double[]> chunkVectors, int limit) {
+                                 List<LegalSourceChunk> chunks, Map<Long, Double> vectorScores, int limit) {
         if (chunks.isEmpty()) {
             return List.of();
         }
@@ -58,8 +58,7 @@ public class HybridLegalRanker {
                 continue;
             }
             double lexical = lexicalScore(chunk.getChunkText(), terms, documentFrequency, chunks.size());
-            double vector = queryVector.map(value -> cosine(value,
-                    chunkVectors.getOrDefault(chunk.getId(), new double[0]))).orElse(0D);
+            double vector = vectorScores.getOrDefault(chunk.getId(), 0D);
             double intent = legalIntentScore(query, source, chunk);
             candidates.put(chunk.getId(), new Candidate(source, chunk, lexical, vector, intent));
         }
@@ -67,19 +66,25 @@ public class HybridLegalRanker {
         Map<Long, Double> fused = new LinkedHashMap<>();
         LegalAiProperties.Retrieval config = properties.getRetrieval();
         addRrf(fused, rank(candidates.values(), Candidate::lexicalScore), config.getLexicalWeight());
-        if (queryVector.isPresent()) {
+        if (!vectorScores.isEmpty()) {
             addRrf(fused, rank(candidates.values(), Candidate::vectorScore), config.getVectorWeight());
         }
         addRrf(fused, rank(candidates.values(), Candidate::intentScore), config.getIntentWeight());
 
         int rerankLimit = Math.min(config.getRerankCandidateLimit(), fused.size());
-        return fused.entrySet().stream()
+        int finalLimit = Math.max(1, Math.min(limit, 10));
+        List<LawPassage> deterministic = fused.entrySet().stream()
                 .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
                 .limit(rerankLimit)
                 .map(entry -> rerank(candidates.get(entry.getKey()), entry.getValue(), query, terms))
                 .sorted(Comparator.comparingDouble(LawPassage::score).reversed())
-                .limit(Math.max(1, Math.min(limit, 10)))
                 .toList();
+        if (reranker != null && reranker.isAvailable() && deterministic.size() > 1) {
+            int topN = Math.min(properties.getLocalReranker().getTopN(), deterministic.size());
+            return reranker.rerank(query, deterministic.subList(0, topN))
+                    .stream().limit(finalLimit).toList();
+        }
+        return deterministic.stream().limit(finalLimit).toList();
     }
 
     private List<Candidate> rank(java.util.Collection<Candidate> candidates,
@@ -325,21 +330,6 @@ public class HybridLegalRanker {
 
     private String normalized(String text) {
         return text == null ? "" : text.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
-    }
-
-    private double cosine(double[] left, double[] right) {
-        if (left.length == 0 || left.length != right.length) {
-            return 0D;
-        }
-        double dot = 0D;
-        double leftNorm = 0D;
-        double rightNorm = 0D;
-        for (int i = 0; i < left.length; i++) {
-            dot += left[i] * right[i];
-            leftNorm += left[i] * left[i];
-            rightNorm += right[i] * right[i];
-        }
-        return leftNorm == 0D || rightNorm == 0D ? 0D : dot / Math.sqrt(leftNorm * rightNorm);
     }
 
     private record Candidate(LegalSource source, LegalSourceChunk chunk, double lexicalScore,

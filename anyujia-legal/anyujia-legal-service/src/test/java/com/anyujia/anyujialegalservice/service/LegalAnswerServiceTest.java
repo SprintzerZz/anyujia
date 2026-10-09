@@ -79,7 +79,7 @@ class LegalAnswerServiceTest {
         private final List<LawPassage> passages;
 
         private StubRetriever(List<LawPassage> passages) {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
             this.passages = passages;
         }
 

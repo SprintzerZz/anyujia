@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 class LegalKnowledgeServiceTest {
     @Test
@@ -25,11 +26,12 @@ class LegalKnowledgeServiceTest {
         LegalEmbeddingClient embeddingClient = text -> "first".equals(text)
                 ? Optional.of(new double[]{0.1d, 0.2d}) : Optional.empty();
         LegalKnowledgeService service = new LegalKnowledgeService(
-                sourceMapper, chunkMapper, chunker, embeddingClient, new ObjectMapper());
+                sourceMapper, chunkMapper, chunker, embeddingClient, new ObjectMapper(), noVectorStore());
 
         LegalSourceChunk first = chunk(1L, "first");
         LegalSourceChunk second = chunk(2L, "second");
         when(chunkMapper.selectList(any(Wrapper.class))).thenReturn(List.of(first, second));
+        when(sourceMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
         when(chunkMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
 
         EmbeddingBackfillVO result = service.backfillEmbeddings(500);
@@ -41,6 +43,30 @@ class LegalKnowledgeServiceTest {
         assertThat(first.getEmbeddingJson()).isEqualTo("[0.1,0.2]");
         assertThat(second.getEmbeddingJson()).isNull();
         verify(chunkMapper).updateById(first);
+    }
+
+    private static ObjectProvider<LegalVectorStore> noVectorStore() {
+        return new ObjectProvider<>() {
+            @Override
+            public LegalVectorStore getObject() {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getIfUnique() {
+                return null;
+            }
+        };
     }
 
     private LegalSourceChunk chunk(Long id, String text) {

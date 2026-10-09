@@ -4,10 +4,12 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "chat.rate-limit.conversation", name = "type", havingValue = "local")
 public class LocalConversationRateLimiter implements ConversationRateLimiter {
     private final ConversationRateLimitProperties properties;
     private final Map<Long, Window> windows = new ConcurrentHashMap<>();

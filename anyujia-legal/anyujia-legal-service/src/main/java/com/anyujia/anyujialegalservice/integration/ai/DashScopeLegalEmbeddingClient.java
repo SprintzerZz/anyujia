@@ -11,14 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Slf4j
-@Component
-@ConditionalOnProperty(prefix = "legal.ai.embedding", name = "enabled", havingValue = "true")
 public class DashScopeLegalEmbeddingClient implements LegalEmbeddingClient {
     private final LegalAiProperties properties;
     private final ObjectMapper objectMapper;
@@ -26,7 +21,6 @@ public class DashScopeLegalEmbeddingClient implements LegalEmbeddingClient {
     private final DashScopeCallGuard callGuard;
     private final RestClient restClient;
 
-    @Autowired
     public DashScopeLegalEmbeddingClient(LegalAiProperties properties, ObjectMapper objectMapper,
                                          RestClient.Builder restClientBuilder, LegalEmbeddingCache cache,
                                          DashScopeCallGuard callGuard) {
@@ -72,7 +66,7 @@ public class DashScopeLegalEmbeddingClient implements LegalEmbeddingClient {
             if (text == null || text.isBlank()) {
                 continue;
             }
-            Optional<double[]> cached = cache.get(text);
+            Optional<double[]> cached = cache.get(namespace(), text);
             if (cached.isPresent()) {
                 results.set(index, cached);
             } else {
@@ -96,11 +90,15 @@ public class DashScopeLegalEmbeddingClient implements LegalEmbeddingClient {
             }
             Map<String, double[]> vectors = requestBatch(batch);
             vectors.forEach((text, vector) -> {
-                cache.put(text, vector);
+                cache.put(namespace(), text, vector);
                 missing.get(text).forEach(index -> results.set(index, Optional.of(vector)));
             });
         }
         return results;
+    }
+
+    private String namespace() {
+        return properties.getEmbedding().getModel() + ':' + properties.getEmbedding().getDimensions();
     }
 
     private Map<String, double[]> requestBatch(List<String> texts) {

@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
@@ -48,6 +49,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class UserCouponServiceImpl implements UserCouponService {
 
     private static final int AVAILABLE_COUPON_LIMIT = 100;
+
+    private final ConcurrentHashMap<Long, Object> warmLocks = new ConcurrentHashMap<>();
 
     private final CouponTemplateMapper couponTemplateMapper;
     private final UserCouponMapper userCouponMapper;
@@ -120,9 +123,7 @@ public class UserCouponServiceImpl implements UserCouponService {
             try {
                 userCouponMapper.insert(userCoupon);
                 CouponTemplate template = couponTemplateMapper.selectById(request.getTemplateId());
-                addUnusedIndex(userCoupon, template);
-                putUserCouponCache(userCoupon);
-                sendExpireMessageAfterCommit(userCoupon, template);
+                addCacheAfterCommit(userCoupon, template);
             } catch (DuplicateKeyException ex) {
                 rollbackReservation(request.getTemplateId(), userType, userId, reservationResolved);
                 throw invalid("每位用户限领一张");
@@ -164,12 +165,7 @@ public class UserCouponServiceImpl implements UserCouponService {
     private void reserveCoupon(CouponReceiveReqDTO request, Integer userType, Long userId) {
         CouponReceiveCacheService.ReserveResult result = reserveFromCache(request, userType, userId);
         if (result == CouponReceiveCacheService.ReserveResult.CACHE_MISSING) {
-            CouponTemplate template = couponTemplateMapper.selectById(request.getTemplateId());
-            if (template == null) {
-                throw invalid("优惠券不存在或已失效");
-            }
-            couponReceiveCacheService.warm(template);
-            result = reserveFromCache(request, userType, userId);
+            result = warmThenReserve(request, userType, userId);
         }
         switch (result) {
             case SUCCESS -> {
@@ -193,6 +189,25 @@ public class UserCouponServiceImpl implements UserCouponService {
         return couponReceiveCacheService.reserve(
                 request.getTemplateId(), userType, userId,
                 request.getProvinceCode(), request.getCityCode(), request.getDistrictCode());
+    }
+
+    private CouponReceiveCacheService.ReserveResult warmThenReserve(CouponReceiveReqDTO request,
+                                                                    Integer userType,
+                                                                    Long userId) {
+        Long templateId = request.getTemplateId();
+        Object lock = warmLocks.computeIfAbsent(templateId, id -> new Object());
+        synchronized (lock) {
+            CouponReceiveCacheService.ReserveResult result = reserveFromCache(request, userType, userId);
+            if (result != CouponReceiveCacheService.ReserveResult.CACHE_MISSING) {
+                return result;
+            }
+            CouponTemplate template = couponTemplateMapper.selectById(templateId);
+            if (template == null) {
+                throw invalid("优惠券不存在或已失效");
+            }
+            couponReceiveCacheService.warm(template);
+            return reserveFromCache(request, userType, userId);
+        }
     }
 
     private void rollbackAfterTransactionFailure(Long templateId, Integer userType, Long userId,
@@ -379,15 +394,16 @@ public class UserCouponServiceImpl implements UserCouponService {
         }
     }
 
-    private void sendExpireMessageAfterCommit(UserCoupon coupon, CouponTemplate template) {
-        if (couponExpireProducer == null || template == null) {
-            return;
-        }
+    private void addCacheAfterCommit(UserCoupon coupon, CouponTemplate template) {
         Runnable task = () -> {
-            try {
-                couponExpireProducer.sendExpireMessage(coupon, template);
-            } catch (RuntimeException ex) {
-                log.warn("Send coupon expire message failed, userCouponId={}", coupon.getId(), ex);
+            addUnusedIndex(coupon, template);
+            putUserCouponCache(coupon);
+            if (couponExpireProducer != null && template != null) {
+                try {
+                    couponExpireProducer.sendExpireMessage(coupon, template);
+                } catch (RuntimeException ex) {
+                    log.warn("Send coupon expire message failed, userCouponId={}", coupon.getId(), ex);
+                }
             }
         };
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {

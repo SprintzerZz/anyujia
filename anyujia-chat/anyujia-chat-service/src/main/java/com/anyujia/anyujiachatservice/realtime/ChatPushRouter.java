@@ -15,7 +15,11 @@ public class ChatPushRouter implements ChatMessagePublisher {
 
     @Override
     public void route(Long recipientId, MessageVO message) {
-        ChatMessagePushEvent event = new ChatMessagePushEvent(recipientId, message);
+        route(recipientId, message, 0);
+    }
+
+    public void route(Long recipientId, MessageVO message, int attempts) {
+        ChatMessagePushEvent event = new ChatMessagePushEvent(recipientId, message, attempts);
         for (String nodeId : nodeLocator.nodes(recipientId)) {
             amqpTemplate.convertAndSend(ChatRabbitConfig.PUSH_EXCHANGE, nodeId, event);
         }

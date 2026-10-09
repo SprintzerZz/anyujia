@@ -33,7 +33,7 @@ class LegalKnowledgeSearchServiceTest {
         private final List<LawPassage> ranked;
 
         private StubRetriever(List<LawPassage> ranked) {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
             this.ranked = ranked;
         }
 

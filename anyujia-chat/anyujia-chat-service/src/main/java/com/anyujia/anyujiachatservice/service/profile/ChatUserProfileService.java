@@ -2,6 +2,7 @@ package com.anyujia.anyujiachatservice.service.profile;
 
 import com.anyujia.anyujiaadminapi.app.user.domain.vo.AppUserVO;
 import com.anyujia.anyujiaadminapi.app.user.feign.AppUserFeignClient;
+import com.anyujia.anyujiachatapi.constants.ChatConstants;
 import com.anyujia.anyujiachatapi.domain.vo.ChatUserVO;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
@@ -22,13 +23,18 @@ public class ChatUserProfileService implements ChatUserProfileProvider {
 
     @Override
     public Map<Long, AppUserVO> getRequiredUsers(Collection<Long> userIds) {
-        ApiResult<List<AppUserVO>> result = appUserFeignClient.listByIds(List.copyOf(userIds));
+        List<Long> realIds = userIds.stream()
+                .filter(id -> id != null && id != ChatConstants.AGENT_USER_ID).toList();
+        if (realIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        ApiResult<List<AppUserVO>> result = appUserFeignClient.listByIds(realIds);
         if (result == null || result.getCode() != ResultCode.SUCCESS.getCode() || result.getData() == null) {
             throw new ServiceException("Failed to load chat users");
         }
         Map<Long, AppUserVO> users = result.getData().stream()
                 .collect(Collectors.toMap(AppUserVO::getId, Function.identity(), (left, right) -> left));
-        if (!users.keySet().containsAll(userIds)) {
+        if (!users.keySet().containsAll(realIds)) {
             throw new ServiceException("Chat participant does not exist", ResultCode.INVALID_PARA.getCode());
         }
         return users;
@@ -51,6 +57,10 @@ public class ChatUserProfileService implements ChatUserProfileProvider {
         ChatUserVO result = new ChatUserVO();
         result.setUserId(userId);
         result.setUserType(userType);
+        if (userId != null && userId == ChatConstants.AGENT_USER_ID) {
+            result.setNickname("法律助手");
+            return result;
+        }
         if (user != null) {
             result.setNickname(user.getNickname());
             result.setAvatarUrl(user.getAvatarUrl());

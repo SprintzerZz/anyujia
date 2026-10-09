@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -30,6 +31,7 @@ public class LegalKnowledgeRetriever {
     private final LegalAiProperties properties;
     private final ObjectMapper objectMapper;
     private final HybridLegalRanker ranker;
+    private final ObjectProvider<LegalVectorStore> vectorStoreProvider;
 
     public List<LawPassage> retrieve(String query, String regionCode, LocalDate asOfDate, int limit) {
         Map<String, String> singleQuery = new LinkedHashMap<>();
@@ -60,6 +62,7 @@ public class LegalKnowledgeRetriever {
                 ? embeddingClient.embedBatch(queryTexts)
                 : queryTexts.stream().map(ignored -> Optional.<double[]>empty()).toList();
         boolean useVector = queryVectors.stream().anyMatch(Optional::isPresent);
+        LegalVectorStore vectorStore = useVector ? vectorStoreProvider.getIfAvailable() : null;
         LambdaQueryWrapper<LegalSourceChunk> chunkQuery = new LambdaQueryWrapper<LegalSourceChunk>()
                 .in(LegalSourceChunk::getSourceId, eligible.keySet());
         if (!useVector) {
@@ -76,11 +79,54 @@ public class LegalKnowledgeRetriever {
         for (Map.Entry<String, String> queryEntry : queries.entrySet()) {
             Optional<double[]> queryVector = queryIndex < queryVectors.size()
                     ? queryVectors.get(queryIndex) : Optional.empty();
+            Map<Long, Double> vectorScores = vectorScores(queryVector, chunks, vectorStore,
+                    chunkVectors, eligible);
             result.put(queryEntry.getKey(), ranker.rank(queryEntry.getValue(), eligible,
-                    chunks, queryVector, chunkVectors, limit));
+                    chunks, vectorScores, limit));
             queryIndex++;
         }
         return result;
+    }
+
+    private Map<Long, Double> vectorScores(Optional<double[]> queryVector, List<LegalSourceChunk> chunks,
+                                           LegalVectorStore vectorStore, Map<Long, double[]> chunkVectors,
+                                           Map<Long, LegalSource> eligible) {
+        if (queryVector.isEmpty()) {
+            return Map.of();
+        }
+        double[] vector = queryVector.get();
+        if (vectorStore != null && vectorStore.isAvailable()) {
+            return vectorStore.search(vector, properties.getMilvus().getTopK(), eligible.keySet()).stream()
+                    .collect(Collectors.toMap(LegalVectorStore.VectorHit::chunkId,
+                            LegalVectorStore.VectorHit::score, (left, right) -> left, LinkedHashMap::new));
+        }
+        Map<Long, Double> scores = new LinkedHashMap<>();
+        for (LegalSourceChunk chunk : chunks) {
+            double[] chunkVector = chunkVectors.getOrDefault(chunk.getId(), new double[0]);
+            if (chunkVector.length == 0 || chunkVector.length != vector.length) {
+                continue;
+            }
+            double similarity = cosine(vector, chunkVector);
+            if (similarity > 0D) {
+                scores.put(chunk.getId(), similarity);
+            }
+        }
+        return scores;
+    }
+
+    private double cosine(double[] left, double[] right) {
+        if (left.length == 0 || left.length != right.length) {
+            return 0D;
+        }
+        double dot = 0D;
+        double leftNorm = 0D;
+        double rightNorm = 0D;
+        for (int i = 0; i < left.length; i++) {
+            dot += left[i] * right[i];
+            leftNorm += left[i] * left[i];
+            rightNorm += right[i] * right[i];
+        }
+        return leftNorm == 0D || rightNorm == 0D ? 0D : dot / Math.sqrt(leftNorm * rightNorm);
     }
 
     private boolean isEligible(LegalSource source, String region, LocalDate date) {

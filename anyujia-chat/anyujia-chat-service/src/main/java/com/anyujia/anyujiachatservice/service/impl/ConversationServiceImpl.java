@@ -2,14 +2,18 @@ package com.anyujia.anyujiachatservice.service.impl;
 
 import com.anyujia.anyujiaadminapi.app.user.domain.vo.AppUserVO;
 import com.anyujia.anyujiachatapi.constants.ChatConstants;
+import com.anyujia.anyujiachatapi.domain.dto.AgentSessionCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationContextReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationGetReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationHouseReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationListReqDTO;
+import com.anyujia.anyujiachatapi.domain.vo.ChatUserVO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationCreateVO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationContextVO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationVO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentBindReqDTO;
+import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversation;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversationMember;
 import com.anyujia.anyujiachatservice.domain.entity.ChatUserConversation;
@@ -44,6 +48,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final ChatUserProfileProvider profileService;
     private final ChatParticipantIdentityValidator identityValidator;
     private final ChatHousePublishProvider housePublishProvider;
+    private final LegalAgentFeignClient legalAgentFeignClient;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -101,6 +106,25 @@ public class ConversationServiceImpl implements ConversationService {
             throw new ServiceException("Failed to create conversation");
         }
         return toCreateVO(conversation, userId, userType, users);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ConversationCreateVO createAgentSession(Long userId, AgentSessionCreateReqDTO request) {
+        requireCUser(userId);
+        ChatConversation conversation = new ChatConversation();
+        conversation.setId(IdWorker.getId());
+        conversation.setTenantUserId(userId);
+        conversation.setLandlordUserId(ChatConstants.AGENT_USER_ID);
+        conversation.setConversationType(ChatConstants.CONVERSATION_TYPE_AGENT);
+        conversation.setStatus(ChatConstants.CONVERSATION_ACTIVE);
+        conversation.setCreatedAt(LocalDateTime.now());
+        conversation.setUpdatedAt(conversation.getCreatedAt());
+        conversationMapper.insert(conversation);
+        insertMember(conversation.getId(), userId, ChatConstants.USER_TYPE_TENANT);
+        insertAgentUserConversation(conversation, userId);
+        bindAgentConversation(userId, conversation.getId(), request);
+        return toAgentCreateVO(conversation, userId);
     }
 
     @Override
@@ -199,6 +223,39 @@ public class ConversationServiceImpl implements ConversationService {
         index.setCreatedAt(conversation.getCreatedAt());
         index.setUpdatedAt(conversation.getUpdatedAt());
         userConversationMapper.insertIgnore(index);
+    }
+
+    private void insertAgentUserConversation(ChatConversation conversation, Long userId) {
+        ChatUserConversation index = new ChatUserConversation();
+        index.setUserId(userId);
+        index.setConversationId(conversation.getId());
+        index.setRoleType(ChatConstants.USER_TYPE_TENANT);
+        index.setOtherUserId(ChatConstants.AGENT_USER_ID);
+        index.setUnreadCount(0);
+        index.setStatus(conversation.getStatus());
+        index.setCreatedAt(conversation.getCreatedAt());
+        index.setUpdatedAt(conversation.getUpdatedAt());
+        userConversationMapper.insertIgnore(index);
+    }
+
+    private void bindAgentConversation(Long userId, Long chatConversationId, AgentSessionCreateReqDTO request) {
+        LegalAgentBindReqDTO bind = new LegalAgentBindReqDTO();
+        bind.setTenantId(userId);
+        bind.setChatConversationId(chatConversationId);
+        bind.setLandlordConversationId(request.getLandlordConversationId());
+        bind.setContractId(request.getContractId());
+        legalAgentFeignClient.bind("service", bind);
+    }
+
+    private ConversationCreateVO toAgentCreateVO(ChatConversation conversation, Long userId) {
+        ConversationCreateVO vo = new ConversationCreateVO();
+        vo.setSessionId(conversation.getId());
+        vo.setLoginUser(profileService.toChatUser(null, userId, ChatConstants.USER_TYPE_TENANT));
+        ChatUserVO agent = new ChatUserVO();
+        agent.setUserId(ChatConstants.AGENT_USER_ID);
+        agent.setNickname("法律助手");
+        vo.setOtherUser(agent);
+        return vo;
     }
 
     private ConversationCreateVO toCreateVO(ChatConversation item, Long loginId, Integer loginType,

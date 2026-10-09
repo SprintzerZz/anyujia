@@ -2,11 +2,14 @@ package com.anyujia.anyujiachatservice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.anyujia.anyujiachatapi.constants.ChatConstants;
+import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSendReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSyncReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
@@ -24,6 +27,9 @@ import com.anyujia.anyujiachatservice.service.moderation.ChatContentFilterProper
 import com.anyujia.anyujiachatservice.service.moderation.ChatContentModerationService;
 import com.anyujia.anyujiachatservice.service.moderation.DefaultChatContentModerationService;
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
+import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequenceAllocator;
+import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
+import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -54,22 +60,23 @@ class MessageServiceImplTest {
         RecentMessageCache recentMessageCache = mock(RecentMessageCache.class);
         ChatContentModerationService contentModerationService = content -> content;
         ConversationRateLimiter rateLimiter = ignored -> true;
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
         MessageService service = new MessageServiceImpl(
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
-                rateLimiter, new ChatMetrics(new SimpleMeterRegistry()));
+                rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                mock(LegalAgentFeignClient.class));
 
         when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
-        when(conversationMapper.selectNextMessageSeqForUpdate(7L)).thenReturn(40L);
-        when(conversationMapper.updateNextMessageSeq(7L, 41L)).thenReturn(1);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
         when(messageMapper.selectOne(any())).thenReturn(null);
         when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
             message.setId(100L);
             return 1;
         });
-        when(memberMapper.incrementUnread(7L, 20L)).thenReturn(1);
-        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any(), anyInt()))
+        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any()))
                 .thenReturn(1);
 
         MessageSendReqDTO request = new MessageSendReqDTO();
@@ -86,9 +93,10 @@ class MessageServiceImplTest {
         assertThat(inserted.getValue().getConversationSeq()).isEqualTo(41L);
         assertThat(result.getFromId()).isEqualTo(10L);
         assertThat(result.getConversationSeq()).isEqualTo("41");
+        verify(unreadService).increment(20L, 7L);
         verify(pushRouter).route(20L, result);
-        verify(userConversationMapper).touchMessage(10L, 7L, 100L, 41L, result.getCreateTime(), 0);
-        verify(userConversationMapper).touchMessage(20L, 7L, 100L, 41L, result.getCreateTime(), 1);
+        verify(userConversationMapper).touchMessage(10L, 7L, 100L, 41L, result.getCreateTime());
+        verify(userConversationMapper).touchMessage(20L, 7L, 100L, 41L, result.getCreateTime());
     }
 
     @Test
@@ -103,10 +111,13 @@ class MessageServiceImplTest {
         RecentMessageCache recentMessageCache = mock(RecentMessageCache.class);
         ChatContentModerationService contentModerationService = content -> content;
         ConversationRateLimiter rateLimiter = ignored -> true;
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
         MessageService service = new MessageServiceImpl(
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
-                rateLimiter, new ChatMetrics(new SimpleMeterRegistry()));
+                rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                mock(LegalAgentFeignClient.class));
         ChatMessage first = message(101L, "first");
         ChatMessage second = message(102L, "second");
         when(messageMapper.selectList(any())).thenReturn(List.of(first, second));
@@ -140,22 +151,23 @@ class MessageServiceImplTest {
         ChatContentModerationService contentModerationService =
                 new DefaultChatContentModerationService(properties);
         ConversationRateLimiter rateLimiter = ignored -> true;
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
         MessageService service = new MessageServiceImpl(
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
-                rateLimiter, new ChatMetrics(new SimpleMeterRegistry()));
+                rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                mock(LegalAgentFeignClient.class));
 
         when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
-        when(conversationMapper.selectNextMessageSeqForUpdate(7L)).thenReturn(40L);
-        when(conversationMapper.updateNextMessageSeq(7L, 41L)).thenReturn(1);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
         when(messageMapper.selectOne(any())).thenReturn(null);
         when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
             ChatMessage message = invocation.getArgument(0);
             message.setId(100L);
             return 1;
         });
-        when(memberMapper.incrementUnread(7L, 20L)).thenReturn(1);
-        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any(), anyInt()))
+        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any()))
                 .thenReturn(1);
 
         MessageSendReqDTO request = new MessageSendReqDTO();
@@ -170,6 +182,104 @@ class MessageServiceImplTest {
         verify(messageMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getContent()).isEqualTo("***，别问了");
         assertThat(result.getContent()).isEqualTo("***，别问了");
+    }
+
+    @Test
+    void agentConversationRoutesToLegalWithoutUnreadForVirtualRecipient() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatMessagePublisher pushRouter = mock(ChatMessagePublisher.class);
+        RecentMessageCache recentMessageCache = mock(RecentMessageCache.class);
+        ChatContentModerationService contentModerationService = content -> content;
+        ConversationRateLimiter rateLimiter = ignored -> true;
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
+        LegalAgentFeignClient legalAgentFeignClient = mock(LegalAgentFeignClient.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, memberMapper, userConversationMapper,
+                memberService, pushRouter, recentMessageCache, contentModerationService,
+                rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                legalAgentFeignClient);
+
+        when(memberService.requireCounterparty(7L, 10L)).thenReturn(ChatConstants.AGENT_USER_ID);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
+        when(messageMapper.selectOne(any())).thenReturn(null);
+        when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(100L);
+            return 1;
+        });
+        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any())).thenReturn(1);
+
+        MessageSendReqDTO request = new MessageSendReqDTO();
+        request.setSessionId(7L);
+        request.setClientMessageId("client-1");
+        request.setType(0);
+        request.setContent("押金怎么退");
+        service.send(10L, request);
+
+        ArgumentCaptor<ChatMessage> inserted = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(messageMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getRecipientId()).isEqualTo(ChatConstants.AGENT_USER_ID);
+        verify(unreadService, never()).increment(any(), any());
+        verify(userConversationMapper, times(1)).touchMessage(any(), any(), any(), any(), any());
+        verify(pushRouter, never()).route(any(), any());
+    }
+
+    @Test
+    void agentMessagePersistsWithAgentSenderAndPushesToTenant() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatMessagePublisher pushRouter = mock(ChatMessagePublisher.class);
+        RecentMessageCache recentMessageCache = mock(RecentMessageCache.class);
+        ChatContentModerationService contentModerationService = content -> content;
+        ConversationRateLimiter rateLimiter = ignored -> true;
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
+        LegalAgentFeignClient legalAgentFeignClient = mock(LegalAgentFeignClient.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, memberMapper, userConversationMapper,
+                memberService, pushRouter, recentMessageCache, contentModerationService,
+                rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                legalAgentFeignClient);
+
+        when(conversationMapper.selectById(7L)).thenReturn(agentConversation(7L, 10L));
+        when(sequenceAllocator.next(7L)).thenReturn(42L);
+        when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(200L);
+            return 1;
+        });
+        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any())).thenReturn(1);
+
+        AgentMessageReqDTO request = new AgentMessageReqDTO();
+        request.setChatConversationId(7L);
+        request.setContent("法律分析结果");
+        MessageVO result = service.sendAgentMessage(10L, request);
+
+        ArgumentCaptor<ChatMessage> inserted = ArgumentCaptor.forClass(ChatMessage.class);
+        verify(messageMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getSenderId()).isEqualTo(ChatConstants.AGENT_USER_ID);
+        assertThat(inserted.getValue().getRecipientId()).isEqualTo(10L);
+        verify(unreadService).increment(10L, 7L);
+        verify(userConversationMapper).touchMessage(10L, 7L, 200L, 42L, result.getCreateTime());
+        verify(pushRouter).route(10L, result);
+    }
+
+    private ChatConversation agentConversation(Long id, Long tenantId) {
+        ChatConversation conversation = new ChatConversation();
+        conversation.setId(id);
+        conversation.setTenantUserId(tenantId);
+        conversation.setLandlordUserId(ChatConstants.AGENT_USER_ID);
+        conversation.setConversationType(ChatConstants.CONVERSATION_TYPE_AGENT);
+        conversation.setStatus(ChatConstants.CONVERSATION_ACTIVE);
+        return conversation;
     }
 
     private ChatMessage message(Long id, String content) {

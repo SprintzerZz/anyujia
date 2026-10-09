@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.anyujia.anyujialegalservice.config.LegalAiProperties;
 import com.anyujia.anyujialegalservice.domain.entity.LegalSource;
 import com.anyujia.anyujialegalservice.domain.entity.LegalSourceChunk;
+import com.anyujia.anyujialegalservice.integration.ai.NoopLegalReranker;
 import com.anyujia.anyujialegalservice.mapper.LegalSourceChunkMapper;
 import com.anyujia.anyujialegalservice.mapper.LegalSourceMapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -24,6 +25,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.ObjectProvider;
 
 class LegalKnowledgeRetrieverTest {
     @BeforeAll
@@ -54,7 +56,7 @@ class LegalKnowledgeRetrieverTest {
         LegalAiProperties properties = new LegalAiProperties();
         LegalKnowledgeRetriever retriever = new LegalKnowledgeRetriever(
                 sourceMapper, chunkMapper, embeddings, properties, new ObjectMapper(),
-                new HybridLegalRanker(properties));
+                new HybridLegalRanker(properties, new NoopLegalReranker()), noVectorStore());
 
         var result = retriever.retrieve("押金退还", "CN-SH", LocalDate.of(2026, 1, 1), 3);
 
@@ -102,7 +104,7 @@ class LegalKnowledgeRetrieverTest {
         properties.getVector().setEnabled(true);
         LegalKnowledgeRetriever retriever = new LegalKnowledgeRetriever(
                 sourceMapper, chunkMapper, embeddings, properties, new ObjectMapper(),
-                new HybridLegalRanker(properties));
+                new HybridLegalRanker(properties, new NoopLegalReranker()), noVectorStore());
         LinkedHashMap<String, String> queries = new LinkedHashMap<>();
         queries.put("deposit-contract", "押金返还时间");
         queries.put("deposit-chat", "无正当理由扣减押金");
@@ -112,5 +114,29 @@ class LegalKnowledgeRetrieverTest {
         assertThat(batchCalls).hasValue(1);
         assertThat(result).containsOnlyKeys("deposit-contract", "deposit-chat");
         assertThat(result.values()).allSatisfy(passages -> assertThat(passages).hasSize(1));
+    }
+
+    private static ObjectProvider<LegalVectorStore> noVectorStore() {
+        return new ObjectProvider<>() {
+            @Override
+            public LegalVectorStore getObject() {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getObject(Object... args) {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public LegalVectorStore getIfUnique() {
+                return null;
+            }
+        };
     }
 }

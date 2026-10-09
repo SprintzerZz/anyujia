@@ -79,6 +79,25 @@ legal:
       vector-weight: ${LEGAL_RETRIEVAL_VECTOR_WEIGHT:1.2}
       intent-weight: ${LEGAL_RETRIEVAL_INTENT_WEIGHT:0.8}
       rerank-weight: ${LEGAL_RETRIEVAL_RERANK_WEIGHT:0.35}
+    milvus:
+      enabled: ${LEGAL_MILVUS_ENABLED:false}
+      host: ${LEGAL_MILVUS_HOST:127.0.0.1}
+      port: ${LEGAL_MILVUS_PORT:19530}
+      database: ${LEGAL_MILVUS_DATABASE:default}
+      collection: ${LEGAL_MILVUS_COLLECTION:legal_source_chunk_v1}
+      dimension: ${LEGAL_MILVUS_DIMENSION:1024}
+      top-k: ${LEGAL_MILVUS_TOP_K:50}
+      connect-timeout-millis: ${LEGAL_MILVUS_CONNECT_TIMEOUT_MILLIS:10000}
+    local-embedding:
+      enabled: ${LEGAL_LOCAL_EMBEDDING_ENABLED:false}
+      endpoint: ${LEGAL_LOCAL_EMBEDDING_ENDPOINT:http://127.0.0.1:18091/embed}
+      model: ${LEGAL_LOCAL_EMBEDDING_MODEL:BAAI/bge-large-zh-v1.5}
+      dimensions: ${LEGAL_LOCAL_EMBEDDING_DIMENSIONS:1024}
+    local-reranker:
+      enabled: ${LEGAL_LOCAL_RERANKER_ENABLED:false}
+      endpoint: ${LEGAL_LOCAL_RERANKER_ENDPOINT:http://127.0.0.1:18091/rerank}
+      model: ${LEGAL_LOCAL_RERANKER_MODEL:BAAI/bge-reranker-v2-m3}
+      top-n: ${LEGAL_RERANK_TOP_N:8}
 
 management.endpoints.web.exposure.include: health,info
 

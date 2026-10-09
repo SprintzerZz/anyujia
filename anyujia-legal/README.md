@@ -42,19 +42,22 @@ service. Contracts, jobs and reports are always queried with the owning tenant I
 | `LEGAL_RETRIEVAL_VECTOR_WEIGHT` | `1.2` | RRF weight for embedding similarity. |
 | `LEGAL_RETRIEVAL_INTENT_WEIGHT` | `0.8` | RRF weight for legal-intent/synonym retrieval. |
 | `LEGAL_RETRIEVAL_RERANK_WEIGHT` | `0.35` | Weight of deterministic evidence-aware reranking. |
-| `LEGAL_VECTOR_STORE` | `in_memory` | Planned vector backend selector; current local runs use in-process vectors, target local backend is Milvus. |
-| `LEGAL_MILVUS_ENABLED` | `false` | Planned switch for Milvus Standalone-backed vector retrieval. |
-| `LEGAL_MILVUS_HOST` | `127.0.0.1` | Planned Milvus host for local evaluation and development. |
-| `LEGAL_MILVUS_PORT` | `19530` | Planned Milvus gRPC port. |
-| `LEGAL_MILVUS_COLLECTION` | `legal_source_chunk_v1` | Planned law/source chunk collection name. |
-| `LEGAL_LOCAL_EMBEDDING_ENABLED` | `false` | Planned switch for local embedding service. |
-| `LEGAL_LOCAL_EMBEDDING_ENDPOINT` | `http://127.0.0.1:18091/embed` | Planned local embedding endpoint. |
-| `LEGAL_LOCAL_EMBEDDING_MODEL` | `BAAI/bge-large-zh-v1.5` | Planned free local Chinese embedding model. |
+| `LEGAL_MILVUS_ENABLED` | `false` | Enable Milvus Standalone-backed vector retrieval; when disabled or unreachable, retrieval falls back to in-memory cosine. |
+| `LEGAL_MILVUS_HOST` | `127.0.0.1` | Milvus host for local evaluation and development. |
+| `LEGAL_MILVUS_PORT` | `19530` | Milvus gRPC port. |
+| `LEGAL_MILVUS_DATABASE` | `default` | Milvus database name. |
+| `LEGAL_MILVUS_COLLECTION` | `legal_source_chunk_v1` | Law/source chunk collection name. |
+| `LEGAL_MILVUS_DIMENSION` | `1024` | Embedding dimension validated against the collection schema. |
+| `LEGAL_MILVUS_TOP_K` | `50` | Vector candidates recalled per query from Milvus. |
+| `LEGAL_MILVUS_CONNECT_TIMEOUT_MILLIS` | `10000` | Milvus client connect timeout. |
+| `LEGAL_LOCAL_EMBEDDING_ENABLED` | `false` | Enable the local BGE embedding service (takes precedence over DashScope). |
+| `LEGAL_LOCAL_EMBEDDING_ENDPOINT` | `http://127.0.0.1:18091/embed` | Local embedding endpoint. |
+| `LEGAL_LOCAL_EMBEDDING_MODEL` | `BAAI/bge-large-zh-v1.5` | Local Chinese embedding model. |
 | `LEGAL_LOCAL_EMBEDDING_DIMENSIONS` | `1024` | BGE large Chinese embedding dimension used for validation. |
-| `LEGAL_LOCAL_RERANKER_ENABLED` | `false` | Planned switch for local cross-encoder reranking. |
-| `LEGAL_LOCAL_RERANKER_ENDPOINT` | `http://127.0.0.1:18091/rerank` | Planned local reranker endpoint. |
-| `LEGAL_LOCAL_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Planned free local reranker model. |
-| `LEGAL_RERANK_TOP_N` | `8` | Planned number of fused candidates sent to the neural reranker. |
+| `LEGAL_LOCAL_RERANKER_ENABLED` | `false` | Enable the local BGE cross-encoder reranker. |
+| `LEGAL_LOCAL_RERANKER_ENDPOINT` | `http://127.0.0.1:18091/rerank` | Local reranker endpoint. |
+| `LEGAL_LOCAL_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Local reranker model. |
+| `LEGAL_RERANK_TOP_N` | `8` | Number of fused candidates sent to the neural reranker. |
 | `LEGAL_MEMORY_REDIS_ENABLED` | `true` | Enable Redis short-term working memory for bounded chat windows. |
 | `LEGAL_MEMORY_SHORT_TERM_TTL_SECONDS` | `1800` | TTL for Redis short-term legal memory entries. |
 | `LEGAL_MEMORY_CHAT_WINDOW_LIMIT` | `100` | Maximum chat messages retained in the short-term legal memory window. |
@@ -135,25 +138,29 @@ A deterministic reranker then considers query-term coverage, exact phrases, arti
 and official-source signals. Vector failures leave the lexical and legal-intent channels operational.
 Candidate budgets and final context budgets are configured independently.
 
-## Local Milvus/BGE RAG target
+## Milvus/BGE vector retrieval
 
-The current frozen numbers are measured on the repository implementation with lexical, legal-intent,
-optional DashScope embedding, weighted fusion, and deterministic reranking. The next local-only retrieval
-target is Milvus Standalone plus `BAAI/bge-large-zh-v1.5` embeddings and `BAAI/bge-reranker-v2-m3`
-reranking. Until those switches are wired into the Java service and re-evaluated, this section is a target
-architecture rather than a completed runtime claim.
+Vector retrieval is backed by Milvus Standalone with local `BAAI/bge-large-zh-v1.5` embeddings and a
+`BAAI/bge-reranker-v2-m3` cross-encoder reranker, wired through the same retrieval pipeline described above.
+Enable them with `LEGAL_MILVUS_ENABLED`, `LEGAL_LOCAL_EMBEDDING_ENABLED`, and `LEGAL_LOCAL_RERANKER_ENABLED`.
+When local embedding is enabled it takes precedence over the optional DashScope embedding; the vector store
+and reranker each fall back gracefully when their backing service is unavailable.
 
-The planned collection `legal_source_chunk_v1` stores each law or public-source chunk with a stable chunk ID,
-source ID, title/article metadata, region, source URL, version hash, review timestamp, ACTIVE/STALE state,
-and a 1024-dimensional embedding. Retrieval keeps the existing legal-intent and BM25-style lexical channels,
-adds Milvus vector top-N recall, fuses the channels with reciprocal-rank fusion, then sends a bounded fused
-candidate set to the BGE reranker before the final answer context is assembled. This keeps recall broad while
-moving the final ordering closer to semantic legal relevance.
+The `legal_source_chunk_v1` collection stores each law or public-source chunk with a stable chunk ID, source
+ID, title/article metadata, region, source URL, ACTIVE/STALE state, and a 1024-dimensional embedding (HNSW
+index, cosine metric). Retrieval keeps the existing legal-intent and BM25-style lexical channels, adds Milvus
+vector top-N recall, fuses the channels with reciprocal-rank fusion, then sends a bounded fused candidate set
+to the BGE reranker before the final answer context is assembled.
 
-The planned degradation path is explicit: if Milvus, the embedding service, or the reranker is unavailable,
-the assessment still runs with contract rules, chat/product consistency checks, lexical/legal-intent law
-retrieval, and extractive citation fallback. A failed retrieval enhancement must not block tenant-visible
+The degradation path is explicit: if Milvus, the embedding service, or the reranker is unavailable, the
+assessment still runs with contract rules, chat/product consistency checks, lexical/legal-intent law
+retrieval, and extractive citation fallback. A failed retrieval enhancement never blocks tenant-visible
 risk reports.
+
+The local embedding/reranker service lives under `deploy/embedding/` (FastAPI + sentence-transformers) and
+is orchestrated alongside Milvus (etcd + MinIO + standalone) in `deploy/dev/app/docker-compose-mid.yml`.
+Ingestion and backfill write chunks into both MySQL and Milvus; `LegalMilvusBackfillCli` backfills an
+existing MySQL corpus into a fresh Milvus collection.
 
 Scope-compliance improvement work should focus on answer gating rather than only model quality: strengthen
 domain classification before retrieval, maintain an allow-list of rental-law intents, reject out-of-scope
@@ -182,18 +189,15 @@ Resume-safe phrasing for the current implemented state:
 - Built a tenant-private rental legal agent that assembles contract clauses, landlord-tenant chat evidence,
   house-publication product facts, and reviewed law passages into an append-only assessment trace; each report
   links findings back to CONTRACT/CHAT/PRODUCT/LAW evidence categories and a reproducible context snapshot.
-- Implemented hybrid legal retrieval with lexical, legal-intent, optional vector recall, weighted fusion, and
+- Implemented hybrid legal retrieval with lexical, legal-intent, and vector recall, weighted fusion, and
   deterministic evidence-aware reranking; on the frozen local set it reached Recall@4 98.53%, HitRate@4
   100.00%, MRR 0.8578, citation validity 100.00%, citation coverage 93.24%, and answer P95 706.69 ms.
+- Migrated vector recall to Milvus Standalone with local `BAAI/bge-large-zh-v1.5` embeddings and a
+  `BAAI/bge-reranker-v2-m3` cross-encoder reranker, keeping in-memory cosine, lexical/legal-intent, and
+  extractive citation as fallbacks when the vector stack degrades.
 - Added Redis-bounded short-term chat memory and MySQL context snapshots for legal assessment runs, capturing
   context hashes, retrieval metadata, trace stages, and degraded-context signals without storing legal
   conclusions as opaque long-term Redis memory.
-
-Roadmap-safe phrasing for the next optimization:
-
-- Upgrading vector retrieval to local Milvus Standalone with `BAAI/bge-large-zh-v1.5` embeddings and
-  `BAAI/bge-reranker-v2-m3` reranking, targeting stronger semantic recall and scope compliance while keeping
-  deterministic rule checks and citation fallback available when local model components degrade.
 
 Image-only/scanned PDFs currently return an OCR-required parsing error. Uploaded originals are archived
 through the private file-service/OSS flow before parsed blocks and evidence references are persisted.

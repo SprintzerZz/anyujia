@@ -1,4 +1,4 @@
-﻿package com.anyujia.anyujialegalservice.tools;
+package com.anyujia.anyujialegalservice.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

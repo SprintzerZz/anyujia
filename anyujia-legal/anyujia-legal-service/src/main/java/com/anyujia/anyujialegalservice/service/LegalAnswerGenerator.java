@@ -6,4 +6,9 @@ import java.util.List;
 
 public interface LegalAnswerGenerator {
     LegalAnswerGeneration generate(String query, List<LawPassage> passages);
+
+    default LegalAnswerGeneration generateGrounded(String query, List<LawPassage> passages,
+                                                   String groundingContext) {
+        return generate(query, passages);
+    }
 }

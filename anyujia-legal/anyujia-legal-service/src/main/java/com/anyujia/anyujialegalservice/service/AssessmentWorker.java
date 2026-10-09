@@ -46,6 +46,7 @@ public class AssessmentWorker {
     private final RiskAnalysisEnhancer enhancer;
     private final LegalTraceService traceService;
     private final AssessmentContextSnapshotService contextSnapshotService;
+    private final LegalAgentService legalAgentService;
 
     public void execute(Long jobId) {
         LegalAssessmentJob job = jobMapper.selectById(jobId);
@@ -162,6 +163,7 @@ public class AssessmentWorker {
                     "contextSnapshotId", contextSnapshot.getId(),
                     "contextHash", contextSnapshot.getContextHash(),
                     "status", LegalConstants.JOB_COMPLETED));
+            legalAgentService.notifyAssessmentCompleted(contract.getId(), findings);
         } catch (Exception ex) {
             log.error("Legal assessment failed, jobId={}", jobId, ex);
             updateStatus(jobId, LegalConstants.JOB_FAILED, null, safeMessage(ex), LocalDateTime.now());

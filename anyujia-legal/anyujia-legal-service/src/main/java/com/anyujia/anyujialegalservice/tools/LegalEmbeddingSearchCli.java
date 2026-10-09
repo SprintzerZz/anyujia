@@ -1,4 +1,4 @@
-﻿package com.anyujia.anyujialegalservice.tools;
+package com.anyujia.anyujialegalservice.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Connection;
@@ -18,9 +18,9 @@ public final class LegalEmbeddingSearchCli {
 
     public static void main(String[] args) throws Exception {
         String[] queries = args.length == 0 ? new String[]{
-                "鎴夸笢涓嶉€€鎶奸噾鎬庝箞鍔?,
-                "鍑虹鎴垮眿鎹熷潖鍚庣敱璋佹壙鎷呯淮淇矗浠?,
-                "绉熷鎻愬墠瑙ｉ櫎绉熻祦鍚堝悓闇€瑕佹壙鎷呬粈涔堣矗浠?
+                "房东不退押金怎么办？",
+                "出租房屋损坏后由谁承担维修责任？",
+                "租客提前解除租赁合同需要承担什么责任？"
         } : args;
         String apiKey = LegalEmbeddingBackfillCli.required("DASHSCOPE_API_KEY");
         String baseUrl = LegalEmbeddingBackfillCli.env(
@@ -94,4 +94,3 @@ public final class LegalEmbeddingSearchCli {
     private record Hit(Candidate candidate, double score) {
     }
 }
-

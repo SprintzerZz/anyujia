@@ -5,17 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.anyujia.anyujialegalservice.config.LegalAiProperties;
 import com.anyujia.anyujialegalservice.domain.entity.LegalSource;
 import com.anyujia.anyujialegalservice.domain.entity.LegalSourceChunk;
+import com.anyujia.anyujialegalservice.integration.ai.NoopLegalReranker;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class HybridLegalRankerTest {
     @Test
     void fusesLexicalVectorAndLegalIntentThenReranksAuthoritativeEvidence() {
         LegalAiProperties properties = new LegalAiProperties();
-        HybridLegalRanker ranker = new HybridLegalRanker(properties);
+        HybridLegalRanker ranker = new HybridLegalRanker(properties, new NoopLegalReranker());
         LegalSource official = source(1L, "住房租赁条例", "国务院", "https://www.gov.cn/law");
         LegalSource blog = source(2L, "租房博客", null, "https://example.com/post");
         LegalSourceChunk officialDeposit = chunk(11L, 1L, "第二十条",
@@ -24,9 +24,8 @@ class HybridLegalRankerTest {
         LegalSourceChunk unrelated = chunk(13L, 2L, null, "租赁房屋维修责任由双方约定。");
 
         var result = ranker.rank("押金什么时候退还", Map.of(1L, official, 2L, blog),
-                List.of(vectorOnly, unrelated, officialDeposit), Optional.of(new double[]{1D, 0D}),
-                Map.of(11L, new double[]{0.8D, 0.2D}, 12L, new double[]{1D, 0D},
-                        13L, new double[]{0D, 1D}), 3);
+                List.of(vectorOnly, unrelated, officialDeposit),
+                Map.of(11L, 0.97D, 12L, 1.0D, 13L, 0.0D), 3);
 
         assertThat(result).extracting(passage -> passage.chunkId())
                 .startsWith(11L)
@@ -37,12 +36,11 @@ class HybridLegalRankerTest {
     @Test
     void fallsBackToIntentAndLexicalChannelsWithoutQueryVector() {
         LegalAiProperties properties = new LegalAiProperties();
-        HybridLegalRanker ranker = new HybridLegalRanker(properties);
+        HybridLegalRanker ranker = new HybridLegalRanker(properties, new NoopLegalReranker());
         LegalSource source = source(1L, "民法典", "全国人民代表大会", "https://www.gov.cn/law");
         LegalSourceChunk deposit = chunk(11L, 1L, "第七百零三条", "保证金扣除应当具有合同依据。");
 
-        var result = ranker.rank("押金被没收", Map.of(1L, source), List.of(deposit),
-                Optional.empty(), Map.of(), 1);
+        var result = ranker.rank("押金被没收", Map.of(1L, source), List.of(deposit), Map.of(), 1);
 
         assertThat(result).singleElement().satisfies(passage -> {
             assertThat(passage.chunkId()).isEqualTo(11L);
@@ -53,14 +51,14 @@ class HybridLegalRankerTest {
     @Test
     void bridgesColloquialRentalLanguageToStatutoryTerms() {
         LegalAiProperties properties = new LegalAiProperties();
-        HybridLegalRanker ranker = new HybridLegalRanker(properties);
+        HybridLegalRanker ranker = new HybridLegalRanker(properties, new NoopLegalReranker());
         LegalSource source = source(1L, "住房租赁条例", "国务院", "https://www.gov.cn/law");
         LegalSourceChunk entryRule = chunk(11L, 1L, "第九条",
                 "出租人不得擅自进入租赁住房，但是经承租人同意或者依法可以进入的除外。");
         LegalSourceChunk unrelated = chunk(12L, 1L, "第三十条", "住房租赁企业应当建立内部管理制度。");
 
         var result = ranker.rank("房东能随时自己开门进来检查房屋吗", Map.of(1L, source),
-                List.of(unrelated, entryRule), Optional.empty(), Map.of(), 2);
+                List.of(unrelated, entryRule), Map.of(), 2);
 
         assertThat(result).extracting(passage -> passage.chunkId()).startsWith(11L);
     }

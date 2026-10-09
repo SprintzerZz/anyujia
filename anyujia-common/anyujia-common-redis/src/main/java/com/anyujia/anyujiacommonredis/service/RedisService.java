@@ -60,7 +60,7 @@ public class RedisService {
      * @return true=设置成功；false=设置失败
      */
     public boolean expire(final String key, final long timeout, final TimeUnit unit) {
-        return Boolean.TRUE.equals(redisTemplate.expire(key, timeout, unit));
+        return redisTemplate.expire(key, timeout, unit);
     }
 
     /**
@@ -128,7 +128,7 @@ public class RedisService {
      * @return true=删除成功；false=删除失败
      */
     public boolean deleteObject(final String key) {
-        return Boolean.TRUE.equals(redisTemplate.delete(key));
+        return redisTemplate.delete(key);
     }
 
     /**
@@ -540,6 +540,18 @@ public class RedisService {
     public boolean deleteCacheMapValue(final String key, final String hKey) {
         Long count = redisTemplate.opsForHash().delete(key, hKey);
         return count != null && count > 0;
+    }
+
+    /**
+     * 对 Redis Hash 的某个字段执行原子递增（HINCRBY）。
+     *
+     * @param key Redis 键
+     * @param hKey Hash 字段名
+     * @param delta 递增量，可为负数
+     * @return 递增后的值；失败时返回 null
+     */
+    public Long incrementMapValue(final String key, final String hKey, final long delta) {
+        return redisTemplate.opsForHash().increment(key, hKey, delta);
     }
 
     /**

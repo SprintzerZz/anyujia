@@ -1,5 +1,7 @@
 package com.anyujia.anyujiachatservice.controller;
 
+import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
+import com.anyujia.anyujiachatapi.domain.dto.AgentSessionCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationContextReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationGetReqDTO;
@@ -27,6 +29,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -99,6 +102,22 @@ public class ChatController implements ChatFeignClient {
     public ApiResult<MessageVO> send(Long userId, String userFrom, @RequestBody @Valid MessageSendReqDTO request) {
         requireApp(userFrom);
         return ApiResult.success(messageService.send(userId, request));
+    }
+
+    @PostMapping("/agent/session/add")
+    public ApiResult<ConversationCreateVO> createAgentSession(@RequestHeader("userId") Long userId,
+                                                              @RequestHeader("userFrom") String userFrom,
+                                                              @RequestBody @Valid AgentSessionCreateReqDTO request) {
+        requireApp(userFrom);
+        return ApiResult.success(conversationService.createAgentSession(userId, request));
+    }
+
+    @Override
+    @PostMapping("/agent/message")
+    public ApiResult<MessageVO> sendAgentMessage(Long userId, String userFrom,
+                                                 @RequestBody @Valid AgentMessageReqDTO request) {
+        requireInternal(userFrom);
+        return ApiResult.success(messageService.sendAgentMessage(userId, request));
     }
 
     @Override

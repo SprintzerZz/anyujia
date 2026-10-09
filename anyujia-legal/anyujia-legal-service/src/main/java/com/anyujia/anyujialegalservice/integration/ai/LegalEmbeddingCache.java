@@ -56,11 +56,11 @@ public class LegalEmbeddingCache {
                 .build();
     }
 
-    public Optional<double[]> get(String text) {
+    public Optional<double[]> get(String namespace, String text) {
         if (!properties.getEmbedding().isCacheEnabled()) {
             return Optional.empty();
         }
-        String key = key(text);
+        String key = key(namespace, text);
         double[] local = localCache.getIfPresent(key);
         if (local != null) {
             return Optional.of(local);
@@ -83,11 +83,11 @@ public class LegalEmbeddingCache {
         return Optional.empty();
     }
 
-    public void put(String text, double[] vector) {
+    public void put(String namespace, String text, double[] vector) {
         if (!properties.getEmbedding().isCacheEnabled() || vector == null || vector.length == 0) {
             return;
         }
-        String key = key(text);
+        String key = key(namespace, text);
         localCache.put(key, vector);
         RedissonClient redissonClient = redissonClient();
         if (redissonClient == null) {
@@ -119,9 +119,8 @@ public class LegalEmbeddingCache {
         }
     }
 
-    private String key(String text) {
-        String identity = properties.getEmbedding().getModel() + ':'
-                + properties.getEmbedding().getDimensions() + ':' + text;
+    private String key(String namespace, String text) {
+        String identity = namespace + ':' + text;
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(identity.getBytes(StandardCharsets.UTF_8));

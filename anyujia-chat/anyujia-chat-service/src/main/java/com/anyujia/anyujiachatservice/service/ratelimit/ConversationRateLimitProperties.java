@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "chat.rate-limit.conversation")
 public class ConversationRateLimitProperties {
     private boolean enabled = true;
+    private String type = "redis";
     private int maxMessagesPerSecond = 50;
     private long idleExpireSeconds = 300;
 }

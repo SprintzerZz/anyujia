@@ -88,15 +88,19 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
                      @Param("targetStatus") Integer targetStatus);
 
     @Select("""
-            select uc.*
-            from user_coupon uc
-            inner join coupon_template ct on ct.id = uc.template_id
-            where uc.status = #{unusedStatus}
-              and ct.valid_end_time <= now()
-            order by uc.id
+            <script>
+            select * from user_coupon
+            where status = #{unusedStatus}
+              and template_id in
+            <foreach collection="templateIds" item="tid" open="(" separator="," close=")">
+                #{tid}
+            </foreach>
+            order by id
             limit #{limit}
+            </script>
             """)
     List<UserCoupon> selectOverdueUnused(@Param("unusedStatus") Integer unusedStatus,
+                                         @Param("templateIds") List<Long> templateIds,
                                          @Param("limit") int limit);
 
     @Insert("""
@@ -111,4 +115,19 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
             </script>
             """)
     int insertIgnoreBatch(@Param("coupons") List<UserCoupon> coupons);
+
+    @Select("""
+            <script>
+            select user_id from user_coupon
+            where template_id = #{templateId}
+              and user_type = #{userType}
+              and user_id in
+            <foreach collection="userIds" item="uid" open="(" separator="," close=")">
+                #{uid}
+            </foreach>
+            </script>
+            """)
+    List<Long> selectExistingUserIds(@Param("templateId") Long templateId,
+                                     @Param("userType") Integer userType,
+                                     @Param("userIds") List<Long> userIds);
 }

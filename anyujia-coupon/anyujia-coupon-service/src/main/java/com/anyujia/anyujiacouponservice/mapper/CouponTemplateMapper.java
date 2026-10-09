@@ -3,7 +3,10 @@ package com.anyujia.anyujiacouponservice.mapper;
 import com.anyujia.anyujiacouponservice.domain.entity.CouponTemplate;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 优惠券模板 Mapper。
@@ -36,4 +39,10 @@ public interface CouponTemplateMapper extends BaseMapper<CouponTemplate> {
     int decrementStockBatch(@Param("templateId") Long templateId,
                             @Param("userType") Integer userType,
                             @Param("count") int count);
+
+    @Select("""
+            select id from coupon_template
+            where valid_end_time <= now()
+            """)
+    List<Long> selectExpiredTemplateIds();
 }

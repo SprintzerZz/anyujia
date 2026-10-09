@@ -11,4 +11,5 @@ import lombok.NoArgsConstructor;
 public class ChatMessagePushEvent {
     private Long recipientId;
     private MessageVO message;
+    private int attempts;
 }

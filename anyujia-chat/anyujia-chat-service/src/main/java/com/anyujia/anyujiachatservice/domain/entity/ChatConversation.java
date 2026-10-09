@@ -13,6 +13,7 @@ public class ChatConversation {
     private Long id;
     private Long tenantUserId;
     private Long landlordUserId;
+    private Integer conversationType;
     private Long houseId;
     private Long housePublishId;
     private Long lastMessageId;

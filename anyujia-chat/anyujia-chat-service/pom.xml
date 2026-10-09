@@ -20,6 +20,9 @@
             <groupId>com.anyujia</groupId><artifactId>anyujia-house-api</artifactId><version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.anyujia</groupId><artifactId>anyujia-legal-api</artifactId><version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.anyujia</groupId><artifactId>anyujia-common-security</artifactId><version>${project.version}</version>
         </dependency>
         <dependency>

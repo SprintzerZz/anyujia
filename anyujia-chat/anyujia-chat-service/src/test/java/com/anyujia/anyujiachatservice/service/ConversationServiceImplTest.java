@@ -23,6 +23,7 @@ import com.anyujia.anyujiachatservice.service.identity.ChatParticipantIdentityVa
 import com.anyujia.anyujiachatservice.service.house.ChatHousePublishProvider;
 import com.anyujia.anyujiachatservice.service.profile.ChatUserProfileProvider;
 import com.anyujia.anyujiahouseapi.domain.vo.HousePublishConsultVO;
+import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import java.util.Map;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class ConversationServiceImplTest {
         ChatHousePublishProvider housePublishProvider = mock(ChatHousePublishProvider.class);
         ConversationService service = new ConversationServiceImpl(
                 conversationMapper, memberMapper, userConversationMapper, memberService,
-                profileService, identityValidator, housePublishProvider);
+                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class));
 
         AppUserVO tenant = user(10L, "tenant");
         AppUserVO landlord = user(20L, "landlord");
@@ -94,7 +95,7 @@ class ConversationServiceImplTest {
         ChatHousePublishProvider housePublishProvider = mock(ChatHousePublishProvider.class);
         ConversationService service = new ConversationServiceImpl(
                 conversationMapper, memberMapper, userConversationMapper, memberService,
-                profileService, identityValidator, housePublishProvider);
+                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class));
 
         ConversationListReqDTO request = new ConversationListReqDTO();
         request.setCount(10);

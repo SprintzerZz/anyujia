@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.anyujia.anyujiacouponapi.constants.CouponConstants;
 import com.anyujia.anyujiacouponservice.domain.entity.UserCoupon;
+import com.anyujia.anyujiacouponservice.mapper.CouponTemplateMapper;
 import com.anyujia.anyujiacouponservice.mapper.UserCouponMapper;
 import com.anyujia.anyujiacouponservice.mq.event.CouponExpireEvent;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserCouponExpireService {
 
     private final UserCouponMapper userCouponMapper;
+    private final CouponTemplateMapper couponTemplateMapper;
     private final UserCouponIndexCacheService userCouponIndexCacheService;
     private final UserCouponCacheService userCouponCacheService;
 
@@ -35,8 +37,12 @@ public class UserCouponExpireService {
 
     @Transactional(rollbackFor = Exception.class)
     public int scanAndExpire(int limit) {
+        List<Long> expiredTemplateIds = couponTemplateMapper.selectExpiredTemplateIds();
+        if (expiredTemplateIds.isEmpty()) {
+            return 0;
+        }
         List<UserCoupon> coupons = userCouponMapper.selectOverdueUnused(
-                CouponConstants.USER_COUPON_UNUSED, Math.max(1, limit));
+                CouponConstants.USER_COUPON_UNUSED, expiredTemplateIds, Math.max(1, limit));
         int expired = 0;
         for (UserCoupon coupon : coupons) {
             int updated = userCouponMapper.expireUnused(

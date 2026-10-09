@@ -57,15 +57,19 @@ These runs were made against `http://127.0.0.1:18086` after the Spring service h
 P95 as a diagnostic number because remote Redis/MySQL and vector/lexical fusion outliers dominate it; the
 answer P95 is the better resume-facing latency number for the tenant-visible answer endpoint.
 
-Planned local Milvus/BGE rerank benchmark:
+Milvus/BGE rerank benchmark (stack now wired):
 
 | Run label | Stack | Report separately as | Target |
 | --- | --- | --- | --- |
 | `frozen-v1-milvus-bge-rerank` | Milvus Standalone + `BAAI/bge-large-zh-v1.5` + `BAAI/bge-reranker-v2-m3` | A new frozen report, not an overwrite of current numbers | Recall@5 >= 90%, MRR >= 0.75, citation validity >= 98%, scope compliance >= 98%, answer P95 <= 1200 ms |
 
-For that run, keep the current lexical/legal-intent pipeline enabled and add Milvus vector recall plus neural
-reranking as additional stages. Report both the old and new run labels with dataset SHA-256. If the benchmark
-uses new cases, increment the dataset version and do not claim quality improvement against the older baseline.
+To run this stack, start Milvus and the embedding service (`docker compose -f docker-compose-mid.yml up -d
+frameworkjava-milvus frameworkjava-legal-embedding`), then start the service with
+`LEGAL_MILVUS_ENABLED=true LEGAL_LOCAL_EMBEDDING_ENABLED=true LEGAL_LOCAL_RERANKER_ENABLED=true`, and backfill
+the Milvus collection with `LegalMilvusBackfillCli`. Keep the current lexical/legal-intent pipeline enabled and
+add Milvus vector recall plus neural reranking as additional stages. Report both the old and new run labels with
+dataset SHA-256. If the benchmark uses new cases, increment the dataset version and do not claim quality
+improvement against the older baseline.
 
 Scope compliance should be measured with a larger negative set, not only in-domain rental questions. Add frozen
 cases for non-rental civil disputes, criminal-law questions, procedural court guidance, personal finance advice,
