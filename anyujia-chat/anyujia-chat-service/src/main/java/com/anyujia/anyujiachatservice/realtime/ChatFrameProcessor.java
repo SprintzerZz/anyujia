@@ -1,6 +1,8 @@
 package com.anyujia.anyujiachatservice.realtime;
 
 import com.anyujia.anyujiachatapi.domain.dto.ChatFrameDTO;
+import com.anyujia.anyujiachatapi.domain.ChatProtocolErrorCode;
+import com.anyujia.anyujiachatapi.domain.dto.ChatErrorDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSendReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
 import com.anyujia.anyujiachatservice.service.MessageService;
@@ -27,15 +29,23 @@ public class ChatFrameProcessor {
         try {
             frame = objectMapper.readValue(payload, ChatFrameDTO.class);
         } catch (JsonProcessingException ex) {
-            respond(response, new ChatFrameDTO<>("error", "Invalid chat frame"));
+            respondError(response, null, ChatProtocolErrorCode.INVALID_JSON);
             return;
         }
-        if (frame == null || frame.getType() == null) {
-            respond(response, new ChatFrameDTO<>("error", "Invalid chat frame"));
+        if (frame == null) {
+            respondError(response, null, ChatProtocolErrorCode.INVALID_FRAME);
+            return;
+        }
+        if (!validator.validate(frame).isEmpty()) {
+            respondError(response, frame.getRequestId(), ChatProtocolErrorCode.INVALID_FRAME);
+            return;
+        }
+        if (frame.getVersion() != 1) {
+            respondError(response, frame.getRequestId(), ChatProtocolErrorCode.UNSUPPORTED_VERSION);
             return;
         }
         if ("heart_beat".equalsIgnoreCase(frame.getType())) {
-            respond(response, new ChatFrameDTO<>("heart_beat", "pong"));
+            respond(response, new ChatFrameDTO<>(1, frame.getRequestId(), "heart_beat", "pong"));
             return;
         }
         if ("delivery_ack".equalsIgnoreCase(frame.getType())) {
@@ -46,23 +56,23 @@ public class ChatFrameProcessor {
             return;
         }
         if (!"chat".equalsIgnoreCase(frame.getType())) {
-            respond(response, new ChatFrameDTO<>("error", "Unsupported chat frame type"));
+            respondError(response, frame.getRequestId(), ChatProtocolErrorCode.UNSUPPORTED_TYPE);
             return;
         }
         MessageSendReqDTO request;
         try {
             request = objectMapper.convertValue(frame.getData(), MessageSendReqDTO.class);
         } catch (IllegalArgumentException ex) {
-            respond(response, new ChatFrameDTO<>("error", "Invalid chat message"));
+            respondError(response, frame.getRequestId(), ChatProtocolErrorCode.INVALID_MESSAGE);
             return;
         }
         Set<ConstraintViolation<MessageSendReqDTO>> violations = validator.validate(request);
         if (!violations.isEmpty()) {
-            respond(response, new ChatFrameDTO<>("error", violations.iterator().next().getMessage()));
+            respondError(response, frame.getRequestId(), ChatProtocolErrorCode.INVALID_MESSAGE);
             return;
         }
         MessageVO saved = messageService.send(userId, request);
-        respond(response, new ChatFrameDTO<>("chat_ack", saved));
+        respond(response, new ChatFrameDTO<>(1, frame.getRequestId(), "chat_ack", saved));
     }
 
     private String extractMessageId(ChatFrameDTO<?> frame) {
@@ -79,5 +89,10 @@ public class ChatFrameProcessor {
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to serialize chat frame", ex);
         }
+    }
+
+    private void respondError(Consumer<String> response, String requestId, ChatProtocolErrorCode error) {
+        respond(response, new ChatFrameDTO<>(1, requestId, "error",
+                new ChatErrorDTO(error.getCode(), error.getMessage())));
     }
 }

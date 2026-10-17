@@ -26,6 +26,7 @@ import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.WebSocketFrame;
+import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.http.HttpObjectAggregator;
@@ -142,6 +143,7 @@ public class NettyChatServer implements SmartLifecycle {
                                     .addLast(new HttpObjectAggregator(maxFrameBytes))
                                     .addLast(new GatewayAuthenticationHandler())
                                     .addLast(new WebSocketServerProtocolHandler(websocketConfig))
+                                    .addLast(new WebSocketFrameAggregator(maxFrameBytes))
                                     .addLast(new RealtimeFrameHandler());
                         }
                     })

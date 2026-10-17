@@ -285,7 +285,11 @@ export class ChatRealtimeClient {
 
   sendFrame(frame) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(frame));
+      this.socket.send(JSON.stringify({
+        version: 1,
+        requestId: crypto.randomUUID(),
+        ...frame,
+      }));
     }
   }
 
