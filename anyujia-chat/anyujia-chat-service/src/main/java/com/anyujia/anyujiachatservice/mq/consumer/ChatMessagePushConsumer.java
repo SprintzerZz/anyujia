@@ -25,7 +25,8 @@ public class ChatMessagePushConsumer {
     public void consume(ChatMessagePushEvent event) {
         try {
             connectionRegistry.send(event.getRecipientId(),
-                    objectMapper.writeValueAsString(new ChatFrameDTO<>("chat", event.getMessage())));
+                    objectMapper.writeValueAsString(new ChatFrameDTO<>(1,
+                            event.getMessage().getMessageId(), "chat", event.getMessage())));
             deliveryAckService.track(event.getRecipientId(), event.getMessage(),
                     event.getAttempts(), ackTimeoutMillis);
         } catch (JsonProcessingException ex) {
