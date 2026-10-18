@@ -48,6 +48,10 @@ chat:
   message-sharding:
     enabled: ${CHAT_MESSAGE_SHARDING_ENABLED:false}
     physical-shard-count: ${CHAT_MESSAGE_PHYSICAL_SHARD_COUNT:32}
+    backfill:
+      enabled: ${CHAT_MESSAGE_SHARDING_BACKFILL_ENABLED:false}
+      batch-size: ${CHAT_MESSAGE_SHARDING_BACKFILL_BATCH_SIZE:1000}
+      fixed-delay-millis: ${CHAT_MESSAGE_SHARDING_BACKFILL_FIXED_DELAY_MILLIS:10000}
   rabbit:
     publisher-confirm-timeout-millis: ${CHAT_RABBIT_PUBLISHER_CONFIRM_TIMEOUT_MILLIS:3000}
   websocket:
