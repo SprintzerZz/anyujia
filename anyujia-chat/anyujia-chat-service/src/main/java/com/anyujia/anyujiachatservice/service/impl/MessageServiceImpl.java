@@ -70,6 +70,9 @@ public class MessageServiceImpl implements MessageService {
     @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.enabled:false}")
     private boolean messageShardingEnabled;
 
+    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.dual-write:false}")
+    private boolean messageDualWrite;
+
     /** Compatibility constructor for service-level tests and non-Spring callers. */
     public MessageServiceImpl(ChatMessageMapper messageMapper,
                               ChatConversationMapper conversationMapper,
@@ -101,7 +104,7 @@ public class MessageServiceImpl implements MessageService {
             validateType(request.getType());
             Long recipientId = memberService.requireCounterparty(request.getSessionId(), userId);
             boolean agentConversation = ChatConstants.AGENT_USER_ID == recipientId;
-            ChatMessage existing = findByClientId(userId, request.getClientMessageId());
+            ChatMessage existing = findByClientId(userId, request.getClientMessageId(), request.getSessionId());
             if (existing != null) {
                 return toVO(existing);
             }
@@ -124,9 +127,9 @@ public class MessageServiceImpl implements MessageService {
             long dbStart = System.nanoTime();
             try {
                 try {
-                    messageMapper.insert(message);
+                    insertMessage(message);
                 } catch (DuplicateKeyException ex) {
-                    return toVO(findRequiredByClientId(userId, request.getClientMessageId()));
+                    return toVO(findRequiredByClientId(userId, request.getClientMessageId(), request.getSessionId()));
                 }
                 conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
                         .eq(ChatConversation::getId, request.getSessionId())
@@ -193,7 +196,7 @@ public class MessageServiceImpl implements MessageService {
         message.setStatus(ChatConstants.MESSAGE_UNREAD);
         message.setVisited(ChatConstants.MESSAGE_NOT_VISITED);
         message.setCreatedAt(LocalDateTime.now());
-        messageMapper.insert(message);
+        insertMessage(message);
         conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
                 .eq(ChatConversation::getId, request.getChatConversationId())
                 .set(ChatConversation::getLastMessageId, message.getId())
@@ -354,13 +357,62 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private ChatMessage findByClientId(Long senderId, String clientMessageId) {
-        return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
-                .eq(ChatMessage::getSenderId, senderId)
-                .eq(ChatMessage::getClientMessageId, clientMessageId));
+        return findByClientId(senderId, clientMessageId, null);
     }
 
-    private ChatMessage findRequiredByClientId(Long senderId, String clientMessageId) {
-        ChatMessage message = findByClientId(senderId, clientMessageId);
+    private ChatMessage findByClientId(Long senderId, String clientMessageId, Long conversationId) {
+        if (!messageDualWrite || conversationId == null) {
+            return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getSenderId, senderId)
+                    .eq(ChatMessage::getClientMessageId, clientMessageId));
+        }
+        ChatMessage shardMessage = findByClientIdInTable(senderId, clientMessageId,
+                shardRouter.tableName(conversationId));
+        return shardMessage != null
+                ? shardMessage
+                : findByClientIdInTable(senderId, clientMessageId, null);
+    }
+
+    private ChatMessage findByClientIdInTable(Long senderId, String clientMessageId, String tableName) {
+        if (tableName == null) {
+            ChatMessageShardContext.clear();
+        } else {
+            ChatMessageShardContext.use(tableName);
+        }
+        try {
+            return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getSenderId, senderId)
+                    .eq(ChatMessage::getClientMessageId, clientMessageId));
+        } finally {
+            ChatMessageShardContext.clear();
+        }
+    }
+
+    private void insertMessage(ChatMessage message) {
+        if (!messageDualWrite) {
+            messageMapper.insert(message);
+            return;
+        }
+        ChatMessageShardContext.clear();
+        messageMapper.insert(message);
+        try {
+            ChatMessageShardContext.use(shardRouter.tableName(message.getConversationId()));
+            try {
+                messageMapper.insert(message);
+            } catch (DuplicateKeyException ex) {
+                ChatMessage existing = findByClientIdInTable(message.getSenderId(),
+                        message.getClientMessageId(), ChatMessageShardContext.currentTable());
+                if (existing == null || !message.getId().equals(existing.getId())) {
+                    throw ex;
+                }
+            }
+        } finally {
+            ChatMessageShardContext.clear();
+        }
+    }
+
+    private ChatMessage findRequiredByClientId(Long senderId, String clientMessageId, Long conversationId) {
+        ChatMessage message = findByClientId(senderId, clientMessageId, conversationId);
         if (message == null) {
             throw new ServiceException("Message idempotency conflict");
         }
