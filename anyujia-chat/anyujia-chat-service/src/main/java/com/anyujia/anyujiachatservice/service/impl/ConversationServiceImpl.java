@@ -17,11 +17,13 @@ import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversation;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversationMember;
 import com.anyujia.anyujiachatservice.domain.entity.ChatUserConversation;
+import com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache;
 import com.anyujia.anyujiachatservice.mapper.ChatConversationMapper;
 import com.anyujia.anyujiachatservice.mapper.ChatConversationMemberMapper;
 import com.anyujia.anyujiachatservice.mapper.ChatUserConversationMapper;
 import com.anyujia.anyujiachatservice.service.ConversationMemberService;
 import com.anyujia.anyujiachatservice.service.ConversationService;
+import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.anyujia.anyujiachatservice.service.identity.ChatParticipantIdentityValidator;
 import com.anyujia.anyujiachatservice.service.house.ChatHousePublishProvider;
 import com.anyujia.anyujiachatservice.service.profile.ChatUserProfileProvider;
@@ -49,6 +51,8 @@ public class ConversationServiceImpl implements ConversationService {
     private final ChatParticipantIdentityValidator identityValidator;
     private final ChatHousePublishProvider housePublishProvider;
     private final LegalAgentFeignClient legalAgentFeignClient;
+    private final ChatConversationIndexCache conversationIndexCache;
+    private final ChatUnreadService unreadService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -160,8 +164,16 @@ public class ConversationServiceImpl implements ConversationService {
         if ((request.getLastSessionTime() == null) != (cursorConversationId == null)) {
             throw invalid("Both lastSessionTime and lastSessionId are required for conversation cursor pagination");
         }
-        List<ChatUserConversation> conversations = userConversationMapper.selectRecentByUser(
-                userId, request.getLastSessionTime(), cursorConversationId, count);
+        List<ChatUserConversation> conversations = conversationIndexCache.recent(
+                userId, request.getLastSessionTime(), cursorConversationId, count,
+                () -> userConversationMapper.selectRecentByUser(
+                        userId, request.getLastSessionTime(), cursorConversationId, count));
+        conversations.forEach(item -> {
+            Long unreadCount = unreadService.readCount(userId, item.getConversationId());
+            if (unreadCount != null) {
+                item.setUnreadCount(unreadCount.intValue());
+            }
+        });
         Set<Long> otherIds = conversations.stream().map(ChatUserConversation::getOtherUserId)
                 .collect(java.util.stream.Collectors.toSet());
         Map<Long, AppUserVO> users = profileService.getUsers(otherIds);

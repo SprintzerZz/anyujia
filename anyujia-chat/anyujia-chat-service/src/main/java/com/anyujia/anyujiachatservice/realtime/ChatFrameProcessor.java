@@ -4,8 +4,8 @@ import com.anyujia.anyujiachatapi.domain.dto.ChatFrameDTO;
 import com.anyujia.anyujiachatapi.domain.ChatProtocolErrorCode;
 import com.anyujia.anyujiachatapi.domain.dto.ChatErrorDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSendReqDTO;
-import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
-import com.anyujia.anyujiachatservice.service.MessageService;
+import com.anyujia.anyujiachatservice.mq.event.ChatMessagePersistEvent;
+import com.anyujia.anyujiachatservice.realtime.ChatMessagePersistPublisher;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ChatFrameProcessor {
-    private final MessageService messageService;
+    private final ChatMessagePersistPublisher persistPublisher;
     private final Validator validator;
     private final ObjectMapper objectMapper;
     private final ChatDeliveryAckService deliveryAckService;
@@ -71,8 +71,8 @@ public class ChatFrameProcessor {
             respondError(response, frame.getRequestId(), ChatProtocolErrorCode.INVALID_MESSAGE);
             return;
         }
-        MessageVO saved = messageService.send(userId, request);
-        respond(response, new ChatFrameDTO<>(1, frame.getRequestId(), "chat_ack", saved));
+        persistPublisher.publish(new ChatMessagePersistEvent(userId, frame.getRequestId(), request));
+        respond(response, new ChatFrameDTO<>(1, frame.getRequestId(), "chat_accepted", request));
     }
 
     private String extractMessageId(ChatFrameDTO<?> frame) {

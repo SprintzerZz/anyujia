@@ -9,6 +9,11 @@ spring:
       - optional:nacos:anyujia-chat-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
   application:
     name: anyujia-chat
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
   profiles:
     active: ${RUN_ENV:dev}
   datasource:
@@ -40,6 +45,11 @@ management:
         include: health,info,metrics,prometheus,threadpool
 
 chat:
+  message-sharding:
+    enabled: ${CHAT_MESSAGE_SHARDING_ENABLED:false}
+    physical-shard-count: ${CHAT_MESSAGE_PHYSICAL_SHARD_COUNT:32}
+  rabbit:
+    publisher-confirm-timeout-millis: ${CHAT_RABBIT_PUBLISHER_CONFIRM_TIMEOUT_MILLIS:3000}
   websocket:
     idle-timeout-seconds: ${CHAT_WEBSOCKET_IDLE_TIMEOUT_SECONDS:150}
     idle-scan-millis: ${CHAT_WEBSOCKET_IDLE_SCAN_MILLIS:30000}

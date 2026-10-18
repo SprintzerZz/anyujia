@@ -5,9 +5,12 @@ import io.netty.channel.Channel;
 import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.Timeout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 
 final class NettyChatConnection implements ChatConnection {
     private static final int SLOW_CONSUMER_CODE = 4008;
@@ -18,21 +21,31 @@ final class NettyChatConnection implements ChatConnection {
     private final long idleTimeoutMillis;
     private final int maxQueuedMessages;
     private final long maxQueuedBytes;
+    private final LongSupplier clock;
     private final Deque<QueuedFrame> outbound = new ArrayDeque<>();
     private final Object reservationLock = new Object();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private volatile long lastActivityMillis;
     private int reservedMessages;
     private long reservedBytes;
-    private boolean idleCheckScheduled;
+    private Timeout idleCheckTimeout;
 
     NettyChatConnection(Long userId, Channel channel, NettyIdleTimer idleTimer,
                         long idleTimeoutMillis, int maxQueuedMessages, long maxQueuedBytes) {
+        this(userId, channel, idleTimer, idleTimeoutMillis, maxQueuedMessages, maxQueuedBytes,
+                System::currentTimeMillis);
+    }
+
+    NettyChatConnection(Long userId, Channel channel, NettyIdleTimer idleTimer,
+                        long idleTimeoutMillis, int maxQueuedMessages, long maxQueuedBytes,
+                        LongSupplier clock) {
         this.userId = userId;
         this.channel = channel;
         this.idleTimer = idleTimer;
         this.idleTimeoutMillis = idleTimeoutMillis;
         this.maxQueuedMessages = maxQueuedMessages;
         this.maxQueuedBytes = maxQueuedBytes;
+        this.clock = clock;
         touch();
         scheduleIdleCheck(idleTimeoutMillis);
     }
@@ -49,12 +62,14 @@ final class NettyChatConnection implements ChatConnection {
 
     @Override
     public boolean isOpen() {
-        return channel.isActive();
+        return !closed.get() && channel.isActive();
     }
 
     @Override
     public void touch() {
-        lastActivityMillis = System.currentTimeMillis();
+        if (!closed.get()) {
+            lastActivityMillis = clock.getAsLong();
+        }
     }
 
     @Override
@@ -69,6 +84,9 @@ final class NettyChatConnection implements ChatConnection {
 
     @Override
     public void send(String payload) {
+        if (closed.get()) {
+            return;
+        }
         int bytes = payload.getBytes(StandardCharsets.UTF_8).length;
         if (!reserve(bytes)) {
             close(SLOW_CONSUMER_CODE, "Outbound queue limit exceeded");
@@ -114,7 +132,17 @@ final class NettyChatConnection implements ChatConnection {
 
     @Override
     public void close(int code, String reason) {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        synchronized (reservationLock) {
+            if (idleCheckTimeout != null) {
+                idleCheckTimeout.cancel();
+                idleCheckTimeout = null;
+            }
+        }
         channel.eventLoop().execute(() -> {
+            discardQueuedFrames();
             if (channel.isActive()) {
                 channel.writeAndFlush(new CloseWebSocketFrame(code, reason))
                         .addListener(ignored -> channel.close());
@@ -124,7 +152,7 @@ final class NettyChatConnection implements ChatConnection {
 
     private boolean reserve(int bytes) {
         synchronized (reservationLock) {
-            if (!channel.isActive() || reservedMessages >= maxQueuedMessages
+            if (closed.get() || !channel.isActive() || reservedMessages >= maxQueuedMessages
                     || reservedBytes + bytes > maxQueuedBytes) {
                 return false;
             }
@@ -143,26 +171,40 @@ final class NettyChatConnection implements ChatConnection {
 
     private void scheduleIdleCheck(long delayMillis) {
         synchronized (reservationLock) {
-            if (!idleCheckScheduled) {
-                idleCheckScheduled = true;
-                idleTimer.schedule(this::checkIdle, delayMillis);
+            if (closed.get() || (idleCheckTimeout != null && !idleCheckTimeout.isCancelled())) {
+                return;
             }
+            idleCheckTimeout = idleTimer.schedule(this::checkIdle, delayMillis);
         }
     }
 
-    private void checkIdle() {
+    void checkIdle() {
         synchronized (reservationLock) {
-            idleCheckScheduled = false;
+            idleCheckTimeout = null;
         }
-        if (!channel.isActive()) {
+        if (closed.get() || !channel.isActive()) {
             return;
         }
-        long remaining = idleTimeoutMillis - (System.currentTimeMillis() - lastActivityMillis);
+        long activityAt = lastActivityMillis;
+        long remaining = idleTimeoutMillis - (clock.getAsLong() - activityAt);
         if (remaining <= 0) {
-            close(4000, "Heartbeat timeout");
+            closeIfStillIdle(activityAt);
         } else {
             scheduleIdleCheck(remaining);
         }
+    }
+
+    private void closeIfStillIdle(long activityAt) {
+        channel.eventLoop().execute(() -> {
+            if (closed.get() || !channel.isActive()) {
+                return;
+            }
+            if (lastActivityMillis != activityAt) {
+                scheduleIdleCheck(Math.max(1, idleTimeoutMillis - (clock.getAsLong() - lastActivityMillis)));
+                return;
+            }
+            close(4000, "Heartbeat timeout");
+        });
     }
 
     private record QueuedFrame(TextWebSocketFrame frame, int bytes) {

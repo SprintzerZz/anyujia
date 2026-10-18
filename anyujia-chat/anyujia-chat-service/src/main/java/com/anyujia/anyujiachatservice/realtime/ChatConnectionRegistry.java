@@ -36,11 +36,13 @@ public class ChatConnectionRegistry {
     }
 
     public void announceOnline(ChatConnection connection) {
-        presenceService.online(connection.userId(), nodeIdentity.getNodeId());
+        presenceService.online(connection.userId(), nodeIdentity.getNodeId(), connection.id());
     }
 
     public void announceHeartbeat(ChatConnection connection) {
-        presenceService.heartbeat(connection.userId(), nodeIdentity.getNodeId());
+        if (connection.isOpen()) {
+            presenceService.heartbeat(connection.userId(), nodeIdentity.getNodeId(), connection.id());
+        }
     }
 
     public boolean remove(ChatConnection connection) {
@@ -67,7 +69,7 @@ public class ChatConnectionRegistry {
     }
 
     public void announceOffline(ChatConnection connection) {
-        presenceService.offline(connection.userId(), nodeIdentity.getNodeId());
+        presenceService.offline(connection.userId(), nodeIdentity.getNodeId(), connection.id());
     }
 
     public Set<Long> closeIdleSessions(long idleBeforeEpochMillis) {

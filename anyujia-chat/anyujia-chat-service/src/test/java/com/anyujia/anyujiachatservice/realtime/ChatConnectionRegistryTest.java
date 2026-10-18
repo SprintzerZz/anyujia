@@ -64,6 +64,9 @@ class ChatConnectionRegistryTest {
         @Override public void online(Long userId, String nodeId) { }
         @Override public void heartbeat(Long userId, String nodeId) { }
         @Override public void offline(Long userId, String nodeId) { offlineUsers.add(userId); }
+        @Override public void online(Long userId, String nodeId, String connectionId) { }
+        @Override public void heartbeat(Long userId, String nodeId, String connectionId) { }
+        @Override public void offline(Long userId, String nodeId, String connectionId) { offlineUsers.add(userId); }
     }
 
     private ChatMetrics metrics() {

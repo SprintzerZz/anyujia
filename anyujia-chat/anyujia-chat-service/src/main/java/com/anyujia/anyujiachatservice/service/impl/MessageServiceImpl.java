@@ -11,6 +11,7 @@ import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
 import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
+import com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversation;
 import com.anyujia.anyujiachatservice.domain.entity.ChatConversationMember;
 import com.anyujia.anyujiachatservice.domain.entity.ChatMessage;
@@ -26,6 +27,8 @@ import com.anyujia.anyujiachatservice.service.moderation.ChatContentModerationSe
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
 import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequenceAllocator;
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardContext;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -61,10 +64,38 @@ public class MessageServiceImpl implements MessageService {
     private final ChatUnreadService unreadService;
     private final ChatMetrics chatMetrics;
     private final LegalAgentFeignClient legalAgentFeignClient;
+    private final ChatConversationIndexCache conversationIndexCache;
+    private final ChatMessageShardRouter shardRouter;
+
+    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.enabled:false}")
+    private boolean messageShardingEnabled;
+
+    /** Compatibility constructor for service-level tests and non-Spring callers. */
+    public MessageServiceImpl(ChatMessageMapper messageMapper,
+                              ChatConversationMapper conversationMapper,
+                              ChatConversationMemberMapper memberMapper,
+                              ChatUserConversationMapper userConversationMapper,
+                              ConversationMemberService memberService,
+                              ChatMessagePublisher pushRouter,
+                              RecentMessageCache recentMessageCache,
+                              ChatContentModerationService contentModerationService,
+                              ConversationRateLimiter conversationRateLimiter,
+                              RedisConversationSequenceAllocator sequenceAllocator,
+                              ChatUnreadService unreadService,
+                              ChatMetrics chatMetrics,
+                              LegalAgentFeignClient legalAgentFeignClient,
+                              ChatConversationIndexCache conversationIndexCache) {
+        this(messageMapper, conversationMapper, memberMapper, userConversationMapper, memberService,
+                pushRouter, recentMessageCache, contentModerationService, conversationRateLimiter,
+                sequenceAllocator, unreadService, chatMetrics, legalAgentFeignClient,
+                conversationIndexCache, new ChatMessageShardRouter(32));
+        this.messageShardingEnabled = false;
+    }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public MessageVO send(Long userId, MessageSendReqDTO request) {
+        selectMessageShard(request.getSessionId());
         long sendStart = System.nanoTime();
         try {
             validateType(request.getType());
@@ -108,14 +139,22 @@ public class MessageServiceImpl implements MessageService {
                     unreadService.increment(recipientId, request.getSessionId());
                 }
                 long messageTime = toEpochMilli(message.getCreatedAt());
-                int updatedIndexes = userConversationMapper.touchMessage(userId, request.getSessionId(), message.getId(),
-                        message.getConversationSeq(), messageTime);
-                if (!agentConversation) {
-                    updatedIndexes += userConversationMapper.touchMessage(recipientId, request.getSessionId(), message.getId(),
-                            message.getConversationSeq(), messageTime);
-                }
-                if (updatedIndexes != (agentConversation ? 1 : 2)) {
-                    throw new ServiceException("User conversation index is incomplete");
+                List<Long> affectedUsers = agentConversation
+                        ? List.of(userId)
+                        : List.of(userId, recipientId);
+                List<Long> failedCacheUsers = conversationIndexCache.touchMessageForUsers(
+                        affectedUsers,
+                        request.getSessionId(),
+                        message.getId(),
+                        message.getConversationSeq(),
+                        messageTime);
+                if (failedCacheUsers != null && !failedCacheUsers.isEmpty()) {
+                    userConversationMapper.touchMessageForUsers(
+                            failedCacheUsers,
+                            request.getSessionId(),
+                            message.getId(),
+                            message.getConversationSeq(),
+                            messageTime);
                 }
             } finally {
                 chatMetrics.recordDbWrite(dbStart);
@@ -128,6 +167,7 @@ public class MessageServiceImpl implements MessageService {
             }
             return result;
         } finally {
+            ChatMessageShardContext.clear();
             chatMetrics.recordSend(sendStart);
         }
     }
@@ -135,6 +175,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public MessageVO sendAgentMessage(Long userId, AgentMessageReqDTO request) {
+        selectMessageShard(request.getChatConversationId());
+        try {
         ChatConversation conversation = conversationMapper.selectById(request.getChatConversationId());
         if (conversation == null || !Integer.valueOf(ChatConstants.CONVERSATION_TYPE_AGENT)
                 .equals(conversation.getConversationType())) {
@@ -160,15 +202,32 @@ public class MessageServiceImpl implements MessageService {
                 .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
                 .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
         unreadService.increment(tenantId, request.getChatConversationId());
-        userConversationMapper.touchMessage(tenantId, request.getChatConversationId(), message.getId(),
-                message.getConversationSeq(), toEpochMilli(message.getCreatedAt()));
+        List<Long> failedCacheUsers = conversationIndexCache.touchMessageForUsers(
+                List.of(tenantId),
+                request.getChatConversationId(),
+                message.getId(),
+                message.getConversationSeq(),
+                toEpochMilli(message.getCreatedAt()));
+        if (failedCacheUsers != null && !failedCacheUsers.isEmpty()) {
+            userConversationMapper.touchMessageForUsers(
+                    failedCacheUsers,
+                    request.getChatConversationId(),
+                    message.getId(),
+                    message.getConversationSeq(),
+                    toEpochMilli(message.getCreatedAt()));
+        }
         MessageVO result = toVO(message);
         publishAfterCommit(tenantId, result);
         return result;
+        } finally {
+            ChatMessageShardContext.clear();
+        }
     }
 
     @Override
     public List<MessageVO> list(Long userId, MessageListReqDTO request) {
+        selectMessageShard(request.getSessionId());
+        try {
         memberService.requireMember(request.getSessionId(), userId);
         int count = request.getCount() == null ? 20 : Math.max(1, Math.min(request.getCount(), ChatConstants.MAX_PAGE_SIZE));
         Long sequenceCursor = parseCursor(request.getLastConversationSeq(), "conversation sequence");
@@ -194,10 +253,14 @@ public class MessageServiceImpl implements MessageService {
         List<MessageVO> result = new ArrayList<>(messageMapper.selectList(query).stream().map(this::toVO).toList());
         Collections.reverse(result);
         return result;
+        } finally {
+            ChatMessageShardContext.clear();
+        }
     }
 
     @Override
     public List<MessageVO> sync(Long userId, MessageSyncReqDTO request) {
+        selectMessageShard(request.getSessionId());
         long start = System.nanoTime();
         try {
             memberService.requireMember(request.getSessionId(), userId);
@@ -224,6 +287,7 @@ public class MessageServiceImpl implements MessageService {
                     .map(this::toVO)
                     .toList();
         } finally {
+            ChatMessageShardContext.clear();
             chatMetrics.recordSync(start);
         }
     }
@@ -231,6 +295,8 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markVisited(Long userId, MessageVisitedReqDTO request) {
+        selectMessageShard(request.getSessionId());
+        try {
         ChatConversationMember member = memberService.requireMember(request.getSessionId(), userId);
         unreadService.reset(userId, request.getSessionId());
         ChatMessage latest = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
@@ -254,11 +320,16 @@ public class MessageServiceImpl implements MessageService {
                 .eq(ChatMessage::getRecipientId, userId)
                 .eq(ChatMessage::getVisited, ChatConstants.MESSAGE_NOT_VISITED)
                 .set(ChatMessage::getVisited, ChatConstants.MESSAGE_VISITED));
+        } finally {
+            ChatMessageShardContext.clear();
+        }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void markRead(Long userId, MessageReadReqDTO request) {
+        selectMessageShard(request.getSessionId());
+        try {
         memberService.requireMember(request.getSessionId(), userId);
         List<Long> ids;
         try {
@@ -271,6 +342,15 @@ public class MessageServiceImpl implements MessageService {
                 .eq(ChatMessage::getRecipientId, userId)
                 .in(ChatMessage::getId, ids)
                 .set(ChatMessage::getStatus, ChatConstants.MESSAGE_READ));
+        } finally {
+            ChatMessageShardContext.clear();
+        }
+    }
+
+    private void selectMessageShard(Long conversationId) {
+        if (messageShardingEnabled) {
+            ChatMessageShardContext.use(shardRouter.tableName(conversationId));
+        }
     }
 
     private ChatMessage findByClientId(Long senderId, String clientMessageId) {

@@ -66,7 +66,7 @@ class MessageServiceImplTest {
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
                 rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
-                mock(LegalAgentFeignClient.class));
+                mock(LegalAgentFeignClient.class), mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
 
         when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
         when(sequenceAllocator.next(7L)).thenReturn(41L);
@@ -76,8 +76,8 @@ class MessageServiceImplTest {
             message.setId(100L);
             return 1;
         });
-        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any()))
-                .thenReturn(1);
+        when(userConversationMapper.touchMessageForUsers(any(), any(), any(), any(), any()))
+                .thenReturn(2);
 
         MessageSendReqDTO request = new MessageSendReqDTO();
         request.setSessionId(7L);
@@ -95,8 +95,55 @@ class MessageServiceImplTest {
         assertThat(result.getConversationSeq()).isEqualTo("41");
         verify(unreadService).increment(20L, 7L);
         verify(pushRouter).route(20L, result);
-        verify(userConversationMapper).touchMessage(10L, 7L, 100L, 41L, result.getCreateTime());
-        verify(userConversationMapper).touchMessage(20L, 7L, 100L, 41L, result.getCreateTime());
+    }
+
+    @Test
+    void syncUsesConversationSequenceCursorAndReturnsAscendingPage() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatMessagePublisher pushRouter = mock(ChatMessagePublisher.class);
+        RecentMessageCache recentMessageCache = mock(RecentMessageCache.class);
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, memberMapper, userConversationMapper,
+                memberService, pushRouter, recentMessageCache, content -> content,
+                ignored -> true, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
+                mock(LegalAgentFeignClient.class), mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
+
+        when(messageMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(message(6L, "six"), message(7L, "seven")));
+        MessageSyncReqDTO request = new MessageSyncReqDTO();
+        request.setSessionId(7L);
+        request.setAfterConversationSeq("5");
+        request.setCount(2);
+
+        List<MessageVO> result = service.sync(10L, request);
+
+        assertThat(result).extracting(MessageVO::getConversationSeq).containsExactly("6", "7");
+        verify(memberService).requireMember(7L, 10L);
+        verify(messageMapper).selectList(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    void syncRejectsMissingCursorInsteadOfFallingBackToMessageId() {
+        MessageService service = new MessageServiceImpl(
+                mock(ChatMessageMapper.class), mock(ChatConversationMapper.class),
+                mock(ChatConversationMemberMapper.class), mock(ChatUserConversationMapper.class),
+                mock(ConversationMemberService.class), mock(ChatMessagePublisher.class),
+                mock(RecentMessageCache.class), content -> content, ignored -> true,
+                mock(RedisConversationSequenceAllocator.class), mock(ChatUnreadService.class),
+                new ChatMetrics(new SimpleMeterRegistry()), mock(LegalAgentFeignClient.class),
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
+        MessageSyncReqDTO request = new MessageSyncReqDTO();
+        request.setSessionId(7L);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.sync(10L, request))
+                .isInstanceOf(com.anyujia.anyujiacommondomain.exception.ServiceException.class)
+                .hasMessageContaining("cursor");
     }
 
     @Test
@@ -117,7 +164,7 @@ class MessageServiceImplTest {
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
                 rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
-                mock(LegalAgentFeignClient.class));
+                mock(LegalAgentFeignClient.class), mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
         ChatMessage first = message(101L, "first");
         ChatMessage second = message(102L, "second");
         when(messageMapper.selectList(any())).thenReturn(List.of(first, second));
@@ -157,7 +204,8 @@ class MessageServiceImplTest {
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
                 rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
-                mock(LegalAgentFeignClient.class));
+                mock(LegalAgentFeignClient.class),
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
 
         when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
         when(sequenceAllocator.next(7L)).thenReturn(41L);
@@ -167,8 +215,8 @@ class MessageServiceImplTest {
             message.setId(100L);
             return 1;
         });
-        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any()))
-                .thenReturn(1);
+        when(userConversationMapper.touchMessageForUsers(any(), any(), any(), any(), any()))
+                .thenReturn(2);
 
         MessageSendReqDTO request = new MessageSendReqDTO();
         request.setSessionId(7L);
@@ -202,7 +250,7 @@ class MessageServiceImplTest {
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
                 rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
-                legalAgentFeignClient);
+                legalAgentFeignClient, mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
 
         when(memberService.requireCounterparty(7L, 10L)).thenReturn(ChatConstants.AGENT_USER_ID);
         when(sequenceAllocator.next(7L)).thenReturn(41L);
@@ -212,7 +260,7 @@ class MessageServiceImplTest {
             message.setId(100L);
             return 1;
         });
-        when(userConversationMapper.touchMessage(any(), any(), any(), any(), any())).thenReturn(1);
+        when(userConversationMapper.touchMessageForUsers(any(), any(), any(), any(), any())).thenReturn(1);
 
         MessageSendReqDTO request = new MessageSendReqDTO();
         request.setSessionId(7L);
@@ -225,7 +273,6 @@ class MessageServiceImplTest {
         verify(messageMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getRecipientId()).isEqualTo(ChatConstants.AGENT_USER_ID);
         verify(unreadService, never()).increment(any(), any());
-        verify(userConversationMapper, times(1)).touchMessage(any(), any(), any(), any(), any());
         verify(pushRouter, never()).route(any(), any());
     }
 
@@ -247,7 +294,7 @@ class MessageServiceImplTest {
                 messageMapper, conversationMapper, memberMapper, userConversationMapper,
                 memberService, pushRouter, recentMessageCache, contentModerationService,
                 rateLimiter, sequenceAllocator, unreadService, new ChatMetrics(new SimpleMeterRegistry()),
-                legalAgentFeignClient);
+                legalAgentFeignClient, mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
 
         when(conversationMapper.selectById(7L)).thenReturn(agentConversation(7L, 10L));
         when(sequenceAllocator.next(7L)).thenReturn(42L);
@@ -268,7 +315,6 @@ class MessageServiceImplTest {
         assertThat(inserted.getValue().getSenderId()).isEqualTo(ChatConstants.AGENT_USER_ID);
         assertThat(inserted.getValue().getRecipientId()).isEqualTo(10L);
         verify(unreadService).increment(10L, 7L);
-        verify(userConversationMapper).touchMessage(10L, 7L, 200L, 42L, result.getCreateTime());
         verify(pushRouter).route(10L, result);
     }
 

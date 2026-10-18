@@ -2,6 +2,7 @@ package com.anyujia.anyujiachatservice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,9 +40,13 @@ class ConversationServiceImplTest {
         ChatUserProfileProvider profileService = mock(ChatUserProfileProvider.class);
         ChatParticipantIdentityValidator identityValidator = mock(ChatParticipantIdentityValidator.class);
         ChatHousePublishProvider housePublishProvider = mock(ChatHousePublishProvider.class);
+        com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache indexCache =
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class);
         ConversationService service = new ConversationServiceImpl(
                 conversationMapper, memberMapper, userConversationMapper, memberService,
-                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class));
+                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class),
+                indexCache,
+                mock(com.anyujia.anyujiachatservice.service.unread.ChatUnreadService.class));
 
         AppUserVO tenant = user(10L, "tenant");
         AppUserVO landlord = user(20L, "landlord");
@@ -93,9 +98,13 @@ class ConversationServiceImplTest {
         ChatUserProfileProvider profileService = mock(ChatUserProfileProvider.class);
         ChatParticipantIdentityValidator identityValidator = mock(ChatParticipantIdentityValidator.class);
         ChatHousePublishProvider housePublishProvider = mock(ChatHousePublishProvider.class);
+        com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache indexCache =
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class);
         ConversationService service = new ConversationServiceImpl(
                 conversationMapper, memberMapper, userConversationMapper, memberService,
-                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class));
+                profileService, identityValidator, housePublishProvider, mock(LegalAgentFeignClient.class),
+                indexCache,
+                mock(com.anyujia.anyujiachatservice.service.unread.ChatUnreadService.class));
 
         ConversationListReqDTO request = new ConversationListReqDTO();
         request.setCount(10);
@@ -103,6 +112,8 @@ class ConversationServiceImplTest {
         request.setLastSessionId("99");
         when(userConversationMapper.selectRecentByUser(10L, 1700000000000L, 99L, 10))
                 .thenReturn(List.of());
+        when(indexCache.recent(eq(10L), eq(1700000000000L), eq(99L), eq(10), any()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<List<ChatUserConversation>>) invocation.getArgument(4)).get());
 
         service.list(10L, request);
 

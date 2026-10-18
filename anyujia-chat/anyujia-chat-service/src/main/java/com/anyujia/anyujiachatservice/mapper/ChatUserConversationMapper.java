@@ -56,6 +56,26 @@ public interface ChatUserConversationMapper {
                      @Param("messageTime") Long messageTime);
 
     @Update("""
+            <script>
+            UPDATE chat_user_conversation
+               SET last_message_id = #{messageId},
+                   last_message_seq = #{messageSeq},
+                   last_message_time = #{messageTime},
+                   updated_at = CURRENT_TIMESTAMP
+             WHERE conversation_id = #{conversationId}
+               AND user_id IN
+            <foreach collection="userIds" item="userId" open="(" separator="," close=")">
+                #{userId}
+            </foreach>
+            </script>
+            """)
+    int touchMessageForUsers(@Param("userIds") List<Long> userIds,
+                             @Param("conversationId") Long conversationId,
+                             @Param("messageId") Long messageId,
+                             @Param("messageSeq") Long messageSeq,
+                             @Param("messageTime") Long messageTime);
+
+    @Update("""
             UPDATE chat_user_conversation
                SET unread_count = 0,
                    last_read_message_id = #{messageId},

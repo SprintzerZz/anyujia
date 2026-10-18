@@ -1,6 +1,7 @@
 package com.anyujia.anyujiachatservice.realtime.netty;
 
 import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
@@ -16,8 +17,8 @@ final class NettyIdleTimer implements AutoCloseable {
         timer = new HashedWheelTimer(threadFactory, tickMillis, TimeUnit.MILLISECONDS, 512);
     }
 
-    void schedule(Runnable task, long delayMillis) {
-        timer.newTimeout(ignored -> task.run(), Math.max(1, delayMillis), TimeUnit.MILLISECONDS);
+    Timeout schedule(Runnable task, long delayMillis) {
+        return timer.newTimeout(ignored -> task.run(), Math.max(1, delayMillis), TimeUnit.MILLISECONDS);
     }
 
     @Override
