@@ -68,6 +68,9 @@ chat:
       fixed-delay-millis: ${CHAT_MESSAGE_SHARDING_VERIFICATION_FIXED_DELAY_MILLIS:60000}
   rabbit:
     publisher-confirm-timeout-millis: ${CHAT_RABBIT_PUBLISHER_CONFIRM_TIMEOUT_MILLIS:3000}
+    persist:
+      batch-size: ${CHAT_RABBIT_PERSIST_BATCH_SIZE:50}
+      receive-timeout-millis: ${CHAT_RABBIT_PERSIST_RECEIVE_TIMEOUT_MILLIS:100}
   websocket:
     idle-timeout-seconds: ${CHAT_WEBSOCKET_IDLE_TIMEOUT_SECONDS:150}
     idle-scan-millis: ${CHAT_WEBSOCKET_IDLE_SCAN_MILLIS:30000}

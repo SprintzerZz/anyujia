@@ -3,10 +3,14 @@ package com.anyujia.anyujiachatservice.mq.config;
 import com.anyujia.anyujiachatservice.realtime.ChatNodeIdentity;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -89,6 +93,23 @@ public class ChatRabbitConfig {
     public Binding chatPersistDlqBinding(@Qualifier("chatPersistDlq") Queue queue,
                                          @Qualifier("chatPersistDlx") DirectExchange exchange) {
         return BindingBuilder.bind(queue).to(exchange).with(DLQ_ROUTING_KEY);
+    }
+
+    @Bean("chatPersistBatchListenerContainerFactory")
+    public SimpleRabbitListenerContainerFactory chatPersistBatchListenerContainerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer,
+            ConnectionFactory connectionFactory,
+            @Value("${chat.rabbit.persist.batch-size:50}") int configuredBatchSize,
+            @Value("${chat.rabbit.persist.receive-timeout-millis:100}") long receiveTimeoutMillis) {
+        int batchSize = Math.max(1, Math.min(configuredBatchSize, 200));
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(factory, connectionFactory);
+        factory.setBatchListener(true);
+        factory.setConsumerBatchEnabled(true);
+        factory.setBatchSize(batchSize);
+        factory.setReceiveTimeout(Math.max(1L, receiveTimeoutMillis));
+        factory.setPrefetchCount(Math.min(batchSize * 2, 400));
+        return factory;
     }
 
     @Bean
