@@ -444,7 +444,14 @@ public class MessageServiceImpl implements MessageService {
 
     private void insertMessage(ChatMessage message) {
         if (!messageDualWrite) {
-            messageMapper.insert(message);
+            // The idempotency check (findByClientId) clears the shard context, so set it
+            // again here; otherwise a sharding-only write would fall through to the legacy table.
+            ChatMessageShardContext.use(shardRouter.tableName(message.getConversationId()));
+            try {
+                messageMapper.insert(message);
+            } finally {
+                ChatMessageShardContext.clear();
+            }
             return;
         }
         ChatMessageShardContext.clear();

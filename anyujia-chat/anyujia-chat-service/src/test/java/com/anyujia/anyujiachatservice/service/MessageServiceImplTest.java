@@ -30,6 +30,7 @@ import com.anyujia.anyujiachatservice.service.moderation.DefaultChatContentModer
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
 import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequenceAllocator;
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardContext;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
 import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -38,10 +39,12 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class MessageServiceImplTest {
     @BeforeAll
@@ -384,5 +387,48 @@ class MessageServiceImplTest {
         message.setVisited(10);
         message.setCreatedAt(LocalDateTime.now());
         return message;
+    }
+
+    @Test
+    void shardingOnlyWriteRoutesToShardTableAfterIdempotencyCheckClearsContext() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
+        ChatMessageOutboxService outbox = mock(ChatMessageOutboxService.class);
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, memberMapper, userConversationMapper,
+                memberService, mock(ChatMessagePublisher.class), mock(RecentMessageCache.class),
+                content -> content, ignored -> true, sequenceAllocator, unreadService,
+                new ChatMetrics(new SimpleMeterRegistry()), mock(LegalAgentFeignClient.class),
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class),
+                new ChatMessageShardRouter(32), outbox);
+
+        ReflectionTestUtils.setField(service, "messageShardingEnabled", true);
+        ReflectionTestUtils.setField(service, "messageDualWrite", false);
+        ReflectionTestUtils.setField(service, "messageReadFallback", true);
+
+        AtomicReference<String> tableDuringInsert = new AtomicReference<>();
+        when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
+        when(messageMapper.selectOne(any())).thenReturn(null);
+        when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
+            tableDuringInsert.set(ChatMessageShardContext.currentTable());
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(100L);
+            return 1;
+        });
+
+        MessageSendReqDTO request = new MessageSendReqDTO();
+        request.setSessionId(7L);
+        request.setClientMessageId("shard-only-1");
+        request.setType(0);
+        request.setContent("hello");
+        service.send(10L, request);
+
+        assertThat(tableDuringInsert.get()).isEqualTo("chat_message_s07");
     }
 }
