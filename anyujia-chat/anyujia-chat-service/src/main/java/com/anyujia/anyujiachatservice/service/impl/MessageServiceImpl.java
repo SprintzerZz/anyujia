@@ -20,6 +20,7 @@ import com.anyujia.anyujiachatservice.mapper.ChatConversationMemberMapper;
 import com.anyujia.anyujiachatservice.mapper.ChatMessageMapper;
 import com.anyujia.anyujiachatservice.mapper.ChatUserConversationMapper;
 import com.anyujia.anyujiachatservice.metrics.ChatMetrics;
+import com.anyujia.anyujiachatservice.realtime.ChatMessageOutboxService;
 import com.anyujia.anyujiachatservice.service.ConversationMemberService;
 import com.anyujia.anyujiachatservice.service.MessageService;
 import com.anyujia.anyujiachatservice.realtime.ChatMessagePublisher;
@@ -66,6 +67,7 @@ public class MessageServiceImpl implements MessageService {
     private final LegalAgentFeignClient legalAgentFeignClient;
     private final ChatConversationIndexCache conversationIndexCache;
     private final ChatMessageShardRouter shardRouter;
+    private final ChatMessageOutboxService outboxService;
 
     @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.enabled:false}")
     private boolean messageShardingEnabled;
@@ -94,7 +96,7 @@ public class MessageServiceImpl implements MessageService {
         this(messageMapper, conversationMapper, memberMapper, userConversationMapper, memberService,
                 pushRouter, recentMessageCache, contentModerationService, conversationRateLimiter,
                 sequenceAllocator, unreadService, chatMetrics, legalAgentFeignClient,
-                conversationIndexCache, new ChatMessageShardRouter(32));
+                conversationIndexCache, new ChatMessageShardRouter(32), null);
         this.messageShardingEnabled = false;
     }
 
@@ -169,7 +171,7 @@ public class MessageServiceImpl implements MessageService {
             if (agentConversation) {
                 dispatchAgentReplyAfterCommit(userId, request.getSessionId(), request.getContent());
             } else {
-                publishAfterCommit(recipientId, result);
+                publishPersistedMessage(recipientId, result);
             }
             return result;
         } finally {
@@ -223,7 +225,7 @@ public class MessageServiceImpl implements MessageService {
                     toEpochMilli(message.getCreatedAt()));
         }
         MessageVO result = toVO(message);
-        publishAfterCommit(tenantId, result);
+        publishPersistedMessage(tenantId, result);
         return result;
         } finally {
             ChatMessageShardContext.clear();
@@ -593,6 +595,14 @@ public class MessageServiceImpl implements MessageService {
             log.error("Chat message persisted but online push failed, messageId={}, recipientId={}",
                     message.getMessageId(), recipientId, ex);
         }
+    }
+
+    private void publishPersistedMessage(Long recipientId, MessageVO message) {
+        if (outboxService == null) {
+            publishAfterCommit(recipientId, message);
+            return;
+        }
+        outboxService.enqueue(recipientId, message);
     }
 
     private void dispatchAgentReplyAfterCommit(Long userId, Long conversationId, String query) {
