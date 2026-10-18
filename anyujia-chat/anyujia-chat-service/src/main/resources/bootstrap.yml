@@ -48,6 +48,7 @@ chat:
   message-sharding:
     enabled: ${CHAT_MESSAGE_SHARDING_ENABLED:false}
     dual-write: ${CHAT_MESSAGE_SHARDING_DUAL_WRITE:false}
+    read-fallback: ${CHAT_MESSAGE_SHARDING_READ_FALLBACK:true}
     physical-shard-count: ${CHAT_MESSAGE_PHYSICAL_SHARD_COUNT:32}
     backfill:
       enabled: ${CHAT_MESSAGE_SHARDING_BACKFILL_ENABLED:false}

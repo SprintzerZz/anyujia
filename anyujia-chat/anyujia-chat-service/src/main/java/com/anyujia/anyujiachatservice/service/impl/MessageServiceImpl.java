@@ -73,6 +73,9 @@ public class MessageServiceImpl implements MessageService {
     @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.dual-write:false}")
     private boolean messageDualWrite;
 
+    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.read-fallback:true}")
+    private boolean messageReadFallback;
+
     /** Compatibility constructor for service-level tests and non-Spring callers. */
     public MessageServiceImpl(ChatMessageMapper messageMapper,
                               ChatConversationMapper conversationMapper,
@@ -256,6 +259,12 @@ public class MessageServiceImpl implements MessageService {
         List<MessageVO> result = new ArrayList<>(messageMapper.selectList(query).stream().map(this::toVO).toList());
         Collections.reverse(result);
         return result;
+        } catch (RuntimeException ex) {
+            if (canFallbackToLegacy()) {
+                ChatMessageShardContext.clear();
+                return listFromLegacy(userId, request);
+            }
+            throw ex;
         } finally {
             ChatMessageShardContext.clear();
         }
@@ -289,6 +298,12 @@ public class MessageServiceImpl implements MessageService {
                     .stream()
                     .map(this::toVO)
                     .toList();
+        } catch (RuntimeException ex) {
+            if (canFallbackToLegacy()) {
+                ChatMessageShardContext.clear();
+                return syncFromLegacy(userId, request);
+            }
+            throw ex;
         } finally {
             ChatMessageShardContext.clear();
             chatMetrics.recordSync(start);
@@ -356,21 +371,79 @@ public class MessageServiceImpl implements MessageService {
         }
     }
 
+    private boolean canFallbackToLegacy() {
+        return messageShardingEnabled && messageReadFallback
+                && ChatMessageShardContext.currentTable() != null;
+    }
+
+    private List<MessageVO> listFromLegacy(Long userId, MessageListReqDTO request) {
+        memberService.requireMember(request.getSessionId(), userId);
+        int count = request.getCount() == null ? 20
+                : Math.max(1, Math.min(request.getCount(), ChatConstants.MAX_PAGE_SIZE));
+        Long sequenceCursor = parseCursor(request.getLastConversationSeq(), "conversation sequence");
+        Long messageIdCursor = parseCursor(request.getLastMessageId(), "message ID");
+        if (sequenceCursor == null && messageIdCursor == null) {
+            return recentMessageCache.getRecent(request.getSessionId(), count,
+                    () -> queryLatest(request.getSessionId(), ChatConstants.MAX_PAGE_SIZE));
+        }
+        LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, request.getSessionId());
+        if (sequenceCursor != null) {
+            query.lt(!Boolean.TRUE.equals(request.getNeedCurMessage()), ChatMessage::getConversationSeq, sequenceCursor)
+                    .le(Boolean.TRUE.equals(request.getNeedCurMessage()), ChatMessage::getConversationSeq, sequenceCursor)
+                    .orderByDesc(ChatMessage::getConversationSeq);
+        } else {
+            query.lt(messageIdCursor != null && !Boolean.TRUE.equals(request.getNeedCurMessage()),
+                            ChatMessage::getId, messageIdCursor)
+                    .le(messageIdCursor != null && Boolean.TRUE.equals(request.getNeedCurMessage()),
+                            ChatMessage::getId, messageIdCursor)
+                    .orderByDesc(ChatMessage::getId);
+        }
+        query.last("LIMIT " + count);
+        List<MessageVO> result = new ArrayList<>(messageMapper.selectList(query).stream()
+                .map(this::toVO).toList());
+        Collections.reverse(result);
+        return result;
+    }
+
+    private List<MessageVO> syncFromLegacy(Long userId, MessageSyncReqDTO request) {
+        memberService.requireMember(request.getSessionId(), userId);
+        int count = request.getCount() == null ? ChatConstants.MAX_PAGE_SIZE
+                : Math.max(1, Math.min(request.getCount(), ChatConstants.MAX_PAGE_SIZE));
+        Long sequenceCursor = parseCursor(request.getAfterConversationSeq(), "conversation sequence");
+        Long messageIdCursor = parseCursor(request.getAfterMessageId(), "message ID");
+        if (sequenceCursor == null && messageIdCursor == null) {
+            throw new ServiceException("A message sync cursor is required", ResultCode.INVALID_PARA.getCode());
+        }
+        LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, request.getSessionId());
+        if (sequenceCursor != null) {
+            query.gt(ChatMessage::getConversationSeq, sequenceCursor)
+                    .orderByAsc(ChatMessage::getConversationSeq);
+        } else {
+            query.gt(ChatMessage::getId, messageIdCursor)
+                    .orderByAsc(ChatMessage::getId);
+        }
+        query.last("LIMIT " + count);
+        return messageMapper.selectList(query).stream().map(this::toVO).toList();
+    }
+
     private ChatMessage findByClientId(Long senderId, String clientMessageId) {
         return findByClientId(senderId, clientMessageId, null);
     }
 
     private ChatMessage findByClientId(Long senderId, String clientMessageId, Long conversationId) {
-        if (!messageDualWrite || conversationId == null) {
+        if (conversationId == null || (!messageDualWrite && !messageShardingEnabled)) {
             return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
                     .eq(ChatMessage::getSenderId, senderId)
                     .eq(ChatMessage::getClientMessageId, clientMessageId));
         }
         ChatMessage shardMessage = findByClientIdInTable(senderId, clientMessageId,
                 shardRouter.tableName(conversationId));
-        return shardMessage != null
-                ? shardMessage
-                : findByClientIdInTable(senderId, clientMessageId, null);
+        if (shardMessage != null || messageDualWrite || !messageReadFallback) {
+            return shardMessage;
+        }
+        return findByClientIdInTable(senderId, clientMessageId, null);
     }
 
     private ChatMessage findByClientIdInTable(Long senderId, String clientMessageId, String tableName) {
