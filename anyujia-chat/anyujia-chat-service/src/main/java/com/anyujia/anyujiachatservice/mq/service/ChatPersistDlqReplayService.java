@@ -16,28 +16,24 @@ public class ChatPersistDlqReplayService {
     public int replay(int requestedLimit) {
         int limit = Math.max(1, Math.min(requestedLimit, 1000));
         Integer replayed = rabbitOperations.execute(channel -> {
-            channel.txSelect();
             int count = 0;
-            try {
-                while (count < limit) {
-                    GetResponse response = channel.basicGet(PERSIST_DLQ, false);
-                    if (response == null) {
-                        break;
-                    }
-                    channel.basicPublish(
-                            ChatRabbitConfig.PERSIST_EXCHANGE,
-                            ChatRabbitConfig.PERSIST_QUEUE,
-                            response.getProps(),
-                            response.getBody());
-                    channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
-                    count++;
+            while (count < limit) {
+                GetResponse response = channel.basicGet(PERSIST_DLQ, false);
+                if (response == null) {
+                    break;
                 }
-                channel.txCommit();
-                return count;
-            } catch (Exception exception) {
-                channel.txRollback();
-                throw exception;
+                // Publish before ack: a crash in between redelivers the DLQ message and
+                // produces a duplicate, which the idempotent (senderId, clientMessageId)
+                // consumer deduplicates. There is no message-loss window.
+                channel.basicPublish(
+                        ChatRabbitConfig.PERSIST_EXCHANGE,
+                        ChatRabbitConfig.PERSIST_QUEUE,
+                        response.getProps(),
+                        response.getBody());
+                channel.basicAck(response.getEnvelope().getDeliveryTag(), false);
+                count++;
             }
+            return count;
         });
         return replayed == null ? 0 : replayed;
     }
