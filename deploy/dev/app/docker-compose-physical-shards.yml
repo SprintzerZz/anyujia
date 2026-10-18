@@ -1,0 +1,101 @@
+# Multi-MySQL physical shard topology for chat_message.
+#
+# The current (logical) sharding keeps all 32 shard tables in one MySQL. At
+# 100M+ messages this single instance becomes the storage/IO bottleneck. This
+# compose file lays out the physical target: 4 MySQL instances, each owning a
+# contiguous band of 8 physical shards.
+#
+# Routing (deterministic, mirrors ChatMessageShardRouter):
+#   virtual_bucket  = conversation_id % 1024
+#   physical_shard  = virtual_bucket % 32
+#   physical_mysql  = physical_shard / 8          (0 -> s00..s07, 1 -> s08..s15, ...)
+#
+# Each instance only materializes its own 8 shard tables
+# (chat_message_s00..s07 on shard-0, chat_message_s08..s15 on shard-1, ...).
+#
+# Usage (topology only; does not replace docker-compose-mid.yml):
+#   docker compose -p frameworkjava -f docker-compose-physical-shards.yml up -d
+services:
+  frameworkjava-mysql-shard-0:
+    container_name: frameworkjava-mysql-shard-0
+    image: mysql:8.4.2
+    command:
+      - mysqld
+      - --innodb-buffer-pool-size=512M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+8:00
+      - --lower-case-table-names=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    ports:
+      - "23310:3306"
+    volumes:
+      - ../data/frameworkjavadata/mysql-shard-0:/var/lib/mysql
+    networks:
+      - frameworkjava_network
+    restart: always
+
+  frameworkjava-mysql-shard-1:
+    container_name: frameworkjava-mysql-shard-1
+    image: mysql:8.4.2
+    command:
+      - mysqld
+      - --innodb-buffer-pool-size=512M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+8:00
+      - --lower-case-table-names=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    ports:
+      - "23311:3306"
+    volumes:
+      - ../data/frameworkjavadata/mysql-shard-1:/var/lib/mysql
+    networks:
+      - frameworkjava_network
+    restart: always
+
+  frameworkjava-mysql-shard-2:
+    container_name: frameworkjava-mysql-shard-2
+    image: mysql:8.4.2
+    command:
+      - mysqld
+      - --innodb-buffer-pool-size=512M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+8:00
+      - --lower-case-table-names=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    ports:
+      - "23312:3306"
+    volumes:
+      - ../data/frameworkjavadata/mysql-shard-2:/var/lib/mysql
+    networks:
+      - frameworkjava_network
+    restart: always
+
+  frameworkjava-mysql-shard-3:
+    container_name: frameworkjava-mysql-shard-3
+    image: mysql:8.4.2
+    command:
+      - mysqld
+      - --innodb-buffer-pool-size=512M
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+8:00
+      - --lower-case-table-names=1
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
+    ports:
+      - "23313:3306"
+    volumes:
+      - ../data/frameworkjavadata/mysql-shard-3:/var/lib/mysql
+    networks:
+      - frameworkjava_network
+    restart: always
+
+networks:
+  frameworkjava_network:
+    driver: bridge
