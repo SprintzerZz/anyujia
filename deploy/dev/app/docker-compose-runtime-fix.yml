@@ -73,5 +73,9 @@ services:
 
   frameworkjava-chat:
     environment:
+      MYSQL_USERNAME: appdev
+      MYSQL_PASSWORD: change-me
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-change-me}
