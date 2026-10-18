@@ -50,6 +50,9 @@ chat:
     poll-millis: ${CHAT_OUTBOX_POLL_MILLIS:1000}
     retry-delay-millis: ${CHAT_OUTBOX_RETRY_DELAY_MILLIS:1000}
     processing-timeout-millis: ${CHAT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}
+    sent-retention-days: ${CHAT_OUTBOX_SENT_RETENTION_DAYS:7}
+    cleanup-batch-size: ${CHAT_OUTBOX_CLEANUP_BATCH_SIZE:1000}
+    cleanup-poll-millis: ${CHAT_OUTBOX_CLEANUP_POLL_MILLIS:60000}
   message-sharding:
     enabled: ${CHAT_MESSAGE_SHARDING_ENABLED:false}
     dual-write: ${CHAT_MESSAGE_SHARDING_DUAL_WRITE:false}

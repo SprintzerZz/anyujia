@@ -33,6 +33,12 @@ public class ChatMessageOutboxService {
     @Value("${chat.outbox.processing-timeout-millis:60000}")
     private long processingTimeoutMillis;
 
+    @Value("${chat.outbox.sent-retention-days:7}")
+    private int sentRetentionDays;
+
+    @Value("${chat.outbox.cleanup-batch-size:1000}")
+    private int cleanupBatchSize;
+
     @Transactional(rollbackFor = Exception.class)
     public void enqueue(Long recipientId, MessageVO message) {
         try {
@@ -86,6 +92,22 @@ public class ChatMessageOutboxService {
                 log.warn("Chat outbox publish failed, outboxId={}, retryCount={}", row.id(),
                         row.retryCount() + 1, ex);
             }
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${chat.outbox.cleanup-poll-millis:60000}")
+    public void cleanupSent() {
+        int limit = Math.max(1, Math.min(cleanupBatchSize, 10_000));
+        int retention = Math.max(1, Math.min(sentRetentionDays, 3650));
+        Timestamp cutoff = Timestamp.from(Instant.now().minusSeconds(retention * 86_400L));
+        int deleted = jdbcTemplate.update("""
+                DELETE FROM chat_message_outbox
+                 WHERE status = 2 AND updated_at < ?
+                 ORDER BY id
+                 LIMIT ?
+                """, cutoff, limit);
+        if (deleted > 0) {
+            log.info("Cleaned sent chat outbox records, deleted={}, retentionDays={}", deleted, retention);
         }
     }
 
