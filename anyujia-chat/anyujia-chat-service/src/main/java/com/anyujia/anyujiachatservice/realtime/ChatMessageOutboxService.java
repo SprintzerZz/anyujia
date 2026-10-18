@@ -1,6 +1,7 @@
 package com.anyujia.anyujiachatservice.realtime;
 
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
+import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +24,7 @@ public class ChatMessageOutboxService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ChatMessagePublisher pushRouter;
+    private final RecentMessageCache recentMessageCache;
 
     @Value("${chat.outbox.batch-size:100}")
     private int batchSize;
@@ -78,6 +80,7 @@ public class ChatMessageOutboxService {
             }
             try {
                 MessageVO message = objectMapper.readValue(row.payload(), MessageVO.class);
+                recentMessageCache.append(message);
                 pushRouter.route(row.recipientId(), message);
                 jdbcTemplate.update("UPDATE chat_message_outbox SET status = 2, updated_at = CURRENT_TIMESTAMP(3) "
                         + "WHERE id = ?", row.id());
