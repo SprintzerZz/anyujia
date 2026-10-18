@@ -144,26 +144,15 @@ public class MessageServiceImpl implements MessageService {
                         .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
                         .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
                         .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
-                if (!agentConversation) {
-                    unreadService.increment(recipientId, request.getSessionId());
-                }
-                long messageTime = toEpochMilli(message.getCreatedAt());
                 List<Long> affectedUsers = agentConversation
                         ? List.of(userId)
                         : List.of(userId, recipientId);
-                List<Long> failedCacheUsers = conversationIndexCache.touchMessageForUsers(
-                        affectedUsers,
-                        request.getSessionId(),
-                        message.getId(),
-                        message.getConversationSeq(),
-                        messageTime);
-                if (failedCacheUsers != null && !failedCacheUsers.isEmpty()) {
-                    userConversationMapper.touchMessageForUsers(
-                            failedCacheUsers,
-                            request.getSessionId(),
-                            message.getId(),
-                            message.getConversationSeq(),
-                            messageTime);
+                if (outboxService != null) {
+                    if (agentConversation) {
+                        outboxService.enqueueDerivedEvents(affectedUsers, false, null, toVO(message));
+                    } else {
+                        outboxService.enqueueMessageEvents(recipientId, affectedUsers, true, toVO(message));
+                    }
                 }
             } finally {
                 chatMetrics.recordDbWrite(dbStart);
@@ -171,7 +160,7 @@ public class MessageServiceImpl implements MessageService {
             MessageVO result = toVO(message);
             if (agentConversation) {
                 dispatchAgentReplyAfterCommit(userId, request.getSessionId(), request.getContent());
-            } else {
+            } else if (outboxService == null) {
                 publishPersistedMessage(recipientId, result);
             }
             return result;
@@ -210,23 +199,12 @@ public class MessageServiceImpl implements MessageService {
                 .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
                 .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
                 .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
-        unreadService.increment(tenantId, request.getChatConversationId());
-        List<Long> failedCacheUsers = conversationIndexCache.touchMessageForUsers(
-                List.of(tenantId),
-                request.getChatConversationId(),
-                message.getId(),
-                message.getConversationSeq(),
-                toEpochMilli(message.getCreatedAt()));
-        if (failedCacheUsers != null && !failedCacheUsers.isEmpty()) {
-            userConversationMapper.touchMessageForUsers(
-                    failedCacheUsers,
-                    request.getChatConversationId(),
-                    message.getId(),
-                    message.getConversationSeq(),
-                    toEpochMilli(message.getCreatedAt()));
-        }
         MessageVO result = toVO(message);
-        publishPersistedMessage(tenantId, result);
+        if (outboxService != null) {
+            outboxService.enqueueMessageEvents(tenantId, List.of(tenantId), true, result);
+        } else {
+            publishPersistedMessage(tenantId, result);
+        }
         return result;
         } finally {
             ChatMessageShardContext.clear();

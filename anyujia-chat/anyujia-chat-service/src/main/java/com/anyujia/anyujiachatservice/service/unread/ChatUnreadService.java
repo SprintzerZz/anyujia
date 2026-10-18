@@ -37,6 +37,16 @@ public class ChatUnreadService {
         }
     }
 
+    /** Writes an absolute value so replayed outbox events remain idempotent. */
+    public void setCount(Long userId, Long conversationId, long count) {
+        try {
+            redisService.setCacheMapValue(unreadKey(userId), String.valueOf(conversationId), Math.max(0L, count));
+            redisService.addMember(DIRTY_KEY, dirtyMember(userId, conversationId));
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Failed to apply unread outbox event", ex);
+        }
+    }
+
     public void reset(Long userId, Long conversationId) {
         try {
             redisService.deleteCacheMapValue(unreadKey(userId), String.valueOf(conversationId));

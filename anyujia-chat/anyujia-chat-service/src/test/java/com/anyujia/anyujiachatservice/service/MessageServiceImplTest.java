@@ -22,6 +22,7 @@ import com.anyujia.anyujiachatservice.mapper.ChatMessageMapper;
 import com.anyujia.anyujiachatservice.mapper.ChatUserConversationMapper;
 import com.anyujia.anyujiachatservice.metrics.ChatMetrics;
 import com.anyujia.anyujiachatservice.realtime.ChatMessagePublisher;
+import com.anyujia.anyujiachatservice.realtime.ChatMessageOutboxService;
 import com.anyujia.anyujiachatservice.service.impl.MessageServiceImpl;
 import com.anyujia.anyujiachatservice.service.moderation.ChatContentFilterProperties;
 import com.anyujia.anyujiachatservice.service.moderation.ChatContentModerationService;
@@ -29,6 +30,7 @@ import com.anyujia.anyujiachatservice.service.moderation.DefaultChatContentModer
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
 import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequenceAllocator;
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
 import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -47,6 +49,47 @@ class MessageServiceImplTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "chat-test");
         TableInfoHelper.initTableInfo(assistant, ChatConversation.class);
         TableInfoHelper.initTableInfo(assistant, ChatMessage.class);
+    }
+
+    @Test
+    void productionSendWritesDerivedUpdatesToOutboxWithoutMutatingRedisInTransaction() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatUnreadService unreadService = mock(ChatUnreadService.class);
+        com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache indexCache =
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class);
+        ChatMessageOutboxService outbox = mock(ChatMessageOutboxService.class);
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, memberMapper, userConversationMapper,
+                memberService, mock(ChatMessagePublisher.class), mock(RecentMessageCache.class),
+                content -> content, ignored -> true, sequenceAllocator, unreadService,
+                new ChatMetrics(new SimpleMeterRegistry()), mock(LegalAgentFeignClient.class),
+                indexCache, new ChatMessageShardRouter(32), outbox);
+
+        when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
+        when(messageMapper.selectOne(any())).thenReturn(null);
+        when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(100L);
+            return 1;
+        });
+
+        MessageSendReqDTO request = new MessageSendReqDTO();
+        request.setSessionId(7L);
+        request.setClientMessageId("outbox-derived-1");
+        request.setType(0);
+        request.setContent("hello");
+        MessageVO result = service.send(10L, request);
+
+        verify(outbox).enqueueMessageEvents(20L, List.of(10L, 20L), true, result);
+        verify(unreadService, never()).increment(any(), any());
+        verify(indexCache, never()).touchMessageForUsers(any(), any(), any(), any(), any());
+        verify(userConversationMapper, never()).touchMessageForUsers(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -93,7 +136,7 @@ class MessageServiceImplTest {
         assertThat(inserted.getValue().getConversationSeq()).isEqualTo(41L);
         assertThat(result.getFromId()).isEqualTo(10L);
         assertThat(result.getConversationSeq()).isEqualTo("41");
-        verify(unreadService).increment(20L, 7L);
+        verify(unreadService, never()).increment(any(), any());
         verify(pushRouter).route(20L, result);
     }
 
@@ -314,7 +357,7 @@ class MessageServiceImplTest {
         verify(messageMapper).insert(inserted.capture());
         assertThat(inserted.getValue().getSenderId()).isEqualTo(ChatConstants.AGENT_USER_ID);
         assertThat(inserted.getValue().getRecipientId()).isEqualTo(10L);
-        verify(unreadService).increment(10L, 7L);
+        verify(unreadService, never()).increment(any(), any());
         verify(pushRouter).route(10L, result);
     }
 

@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
 import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
+import com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache;
+import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
 import java.util.List;
@@ -23,7 +25,8 @@ class ChatMessageOutboxServiceTest {
     void cleanupDeletesOnlyExpiredSentRowsInBoundedBatch() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChatMessageOutboxService service = new ChatMessageOutboxService(
-                jdbcTemplate, new ObjectMapper(), mock(ChatMessagePublisher.class), mock(RecentMessageCache.class));
+                jdbcTemplate, new ObjectMapper(), mock(ChatMessagePublisher.class), mock(RecentMessageCache.class),
+                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class));
         ReflectionTestUtils.setField(service, "sentRetentionDays", 7);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 20_000);
         when(jdbcTemplate.update(anyString(), any(Timestamp.class), eq(10_000))).thenReturn(3);
@@ -39,7 +42,8 @@ class ChatMessageOutboxServiceTest {
         ChatMessagePublisher publisher = mock(ChatMessagePublisher.class);
         RecentMessageCache recentCache = mock(RecentMessageCache.class);
         ChatMessageOutboxService service = new ChatMessageOutboxService(
-                jdbcTemplate, new ObjectMapper(), publisher, recentCache);
+                jdbcTemplate, new ObjectMapper(), publisher, recentCache,
+                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class));
         ReflectionTestUtils.setField(service, "batchSize", 1);
 
         MessageVO message = new MessageVO();
@@ -54,6 +58,8 @@ class ChatMessageOutboxServiceTest {
                     when(resultSet.getLong("id")).thenReturn(7L);
                     when(resultSet.getLong("message_id")).thenReturn(100L);
                     when(resultSet.getLong("recipient_id")).thenReturn(8L);
+                    when(resultSet.getString("event_type"))
+                            .thenReturn(ChatMessageOutboxService.EVENT_RECIPIENT_PUSH);
                     when(resultSet.getString("payload")).thenReturn(payload);
                     when(resultSet.getInt("retry_count")).thenReturn(0);
                     return List.of(rowMapper.mapRow(resultSet, 0));

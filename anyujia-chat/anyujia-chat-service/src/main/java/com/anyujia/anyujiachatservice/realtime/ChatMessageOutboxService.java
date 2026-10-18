@@ -2,6 +2,8 @@ package com.anyujia.anyujiachatservice.realtime;
 
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
 import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
+import com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache;
+import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,11 +22,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @RequiredArgsConstructor
 public class ChatMessageOutboxService {
-    private static final String EVENT_TYPE = "recipient_push";
+    public static final String EVENT_RECIPIENT_PUSH = "recipient_push";
+    public static final String EVENT_UNREAD_REFRESH = "unread_refresh";
+    public static final String EVENT_CONVERSATION_INDEX = "conversation_index";
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ChatMessagePublisher pushRouter;
     private final RecentMessageCache recentMessageCache;
+    private final ChatUnreadService unreadService;
+    private final ChatConversationIndexCache conversationIndexCache;
 
     @Value("${chat.outbox.batch-size:100}")
     private int batchSize;
@@ -43,6 +49,26 @@ public class ChatMessageOutboxService {
 
     @Transactional(rollbackFor = Exception.class)
     public void enqueue(Long recipientId, MessageVO message) {
+        enqueueEvent(recipientId, EVENT_RECIPIENT_PUSH, message);
+    }
+
+    public void enqueueMessageEvents(Long recipientId, List<Long> affectedUsers,
+                                     boolean incrementUnread, MessageVO message) {
+        enqueue(recipientId, message);
+        enqueueDerivedEvents(affectedUsers, incrementUnread, recipientId, message);
+    }
+
+    public void enqueueDerivedEvents(List<Long> affectedUsers, boolean incrementUnread,
+                                     Long unreadUserId, MessageVO message) {
+        if (incrementUnread && unreadUserId != null) {
+            enqueueEvent(unreadUserId, EVENT_UNREAD_REFRESH, message);
+        }
+        for (Long userId : affectedUsers) {
+            enqueueEvent(userId, EVENT_CONVERSATION_INDEX, message);
+        }
+    }
+
+    private void enqueueEvent(Long recipientId, String eventType, MessageVO message) {
         try {
             String payload = objectMapper.writeValueAsString(message);
             jdbcTemplate.update("""
@@ -51,7 +77,7 @@ public class ChatMessageOutboxService {
                          status, retry_count, next_retry_at, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
                     """, IdWorker.getId(), Long.valueOf(message.getMessageId()), recipientId,
-                    EVENT_TYPE, payload);
+                    eventType, payload);
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Failed to serialize chat outbox payload", ex);
         }
@@ -63,7 +89,7 @@ public class ChatMessageOutboxService {
         Timestamp processingDeadline = Timestamp.from(Instant.now().minusMillis(
                 Math.max(1_000L, processingTimeoutMillis)));
         List<OutboxRow> rows = jdbcTemplate.query("""
-                SELECT id, message_id, recipient_id, payload, retry_count
+                SELECT id, message_id, recipient_id, event_type, payload, retry_count
                   FROM chat_message_outbox
                  WHERE (status = 0 AND next_retry_at <= CURRENT_TIMESTAMP(3))
                     OR (status = 1 AND updated_at <= ?)
@@ -71,7 +97,8 @@ public class ChatMessageOutboxService {
                  LIMIT ?
                 """, (rs, rowNum) -> new OutboxRow(
                 rs.getLong("id"), rs.getLong("message_id"), rs.getLong("recipient_id"),
-                rs.getString("payload"), rs.getInt("retry_count")), processingDeadline, limit);
+                rs.getString("event_type"), rs.getString("payload"), rs.getInt("retry_count")),
+                processingDeadline, limit);
         for (OutboxRow row : rows) {
             if (jdbcTemplate.update("UPDATE chat_message_outbox SET status = 1, updated_at = CURRENT_TIMESTAMP(3) "
                     + "WHERE id = ? AND (status = 0 OR (status = 1 AND updated_at <= ?))",
@@ -80,8 +107,7 @@ public class ChatMessageOutboxService {
             }
             try {
                 MessageVO message = objectMapper.readValue(row.payload(), MessageVO.class);
-                recentMessageCache.append(message);
-                pushRouter.route(row.recipientId(), message);
+                dispatch(row, message);
                 jdbcTemplate.update("UPDATE chat_message_outbox SET status = 2, updated_at = CURRENT_TIMESTAMP(3) "
                         + "WHERE id = ?", row.id());
             } catch (Exception ex) {
@@ -95,6 +121,32 @@ public class ChatMessageOutboxService {
                 log.warn("Chat outbox publish failed, outboxId={}, retryCount={}", row.id(),
                         row.retryCount() + 1, ex);
             }
+        }
+    }
+
+    private void dispatch(OutboxRow row, MessageVO message) {
+        switch (row.eventType()) {
+            case EVENT_RECIPIENT_PUSH -> {
+                recentMessageCache.append(message);
+                pushRouter.route(row.recipientId(), message);
+            }
+            case EVENT_UNREAD_REFRESH -> {
+                Long count = jdbcTemplate.queryForObject("""
+                        SELECT COUNT(*) FROM chat_message
+                         WHERE conversation_id = ? AND recipient_id = ? AND visited = 10
+                        """, Long.class, message.getSessionId(), row.recipientId());
+                unreadService.setCount(row.recipientId(), message.getSessionId(), count == null ? 0L : count);
+            }
+            case EVENT_CONVERSATION_INDEX -> {
+                List<Long> failed = conversationIndexCache.touchMessageForUsers(
+                        List.of(row.recipientId()), message.getSessionId(),
+                        Long.valueOf(message.getMessageId()), Long.valueOf(message.getConversationSeq()),
+                        message.getCreateTime());
+                if (failed != null && !failed.isEmpty()) {
+                    throw new IllegalStateException("Conversation index Redis update failed");
+                }
+            }
+            default -> throw new IllegalArgumentException("Unsupported chat outbox event: " + row.eventType());
         }
     }
 
@@ -114,6 +166,7 @@ public class ChatMessageOutboxService {
         }
     }
 
-    private record OutboxRow(long id, long messageId, long recipientId, String payload, int retryCount) {
+    private record OutboxRow(long id, long messageId, long recipientId, String eventType,
+                             String payload, int retryCount) {
     }
 }
