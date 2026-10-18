@@ -47,6 +47,7 @@ management:
 chat:
   outbox:
     batch-size: ${CHAT_OUTBOX_BATCH_SIZE:100}
+    worker-threads: ${CHAT_OUTBOX_WORKER_THREADS:4}
     poll-millis: ${CHAT_OUTBOX_POLL_MILLIS:1000}
     retry-delay-millis: ${CHAT_OUTBOX_RETRY_DELAY_MILLIS:1000}
     processing-timeout-millis: ${CHAT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}

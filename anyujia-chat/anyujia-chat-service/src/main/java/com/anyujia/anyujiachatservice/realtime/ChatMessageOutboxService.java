@@ -7,9 +7,18 @@ import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +44,9 @@ public class ChatMessageOutboxService {
     @Value("${chat.outbox.batch-size:100}")
     private int batchSize;
 
+    @Value("${chat.outbox.worker-threads:4}")
+    private int workerThreads;
+
     @Value("${chat.outbox.retry-delay-millis:1000}")
     private long retryDelayMillis;
 
@@ -46,6 +58,20 @@ public class ChatMessageOutboxService {
 
     @Value("${chat.outbox.cleanup-batch-size:1000}")
     private int cleanupBatchSize;
+
+    private ExecutorService dispatchExecutor;
+
+    @PostConstruct
+    void init() {
+        this.dispatchExecutor = Executors.newFixedThreadPool(Math.max(1, workerThreads));
+    }
+
+    @PreDestroy
+    void shutdown() {
+        if (dispatchExecutor != null) {
+            dispatchExecutor.shutdownNow();
+        }
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public void enqueue(Long recipientId, MessageVO message) {
@@ -99,29 +125,86 @@ public class ChatMessageOutboxService {
                 rs.getLong("id"), rs.getLong("message_id"), rs.getLong("recipient_id"),
                 rs.getString("event_type"), rs.getString("payload"), rs.getInt("retry_count")),
                 processingDeadline, limit);
+        if (rows.isEmpty()) {
+            return;
+        }
+
+        // Merge derived events: recipient_push is per-message (never merged);
+        // unread_refresh and conversation_index are idempotent per (recipient, conversation),
+        // so only the latest row in this batch needs to be dispatched. Older duplicates are
+        // marked sent without any dispatch work.
+        Map<String, OutboxRow> kept = new LinkedHashMap<>();
+        List<Long> skippedIds = new ArrayList<>();
         for (OutboxRow row : rows) {
-            if (jdbcTemplate.update("UPDATE chat_message_outbox SET status = 1, updated_at = CURRENT_TIMESTAMP(3) "
-                    + "WHERE id = ? AND (status = 0 OR (status = 1 AND updated_at <= ?))",
-                    row.id(), processingDeadline) != 1) {
+            if (EVENT_RECIPIENT_PUSH.equals(row.eventType())) {
+                kept.put(row.eventType() + ":" + row.id(), row);
                 continue;
             }
-            try {
-                MessageVO message = objectMapper.readValue(row.payload(), MessageVO.class);
-                dispatch(row, message);
-                jdbcTemplate.update("UPDATE chat_message_outbox SET status = 2, updated_at = CURRENT_TIMESTAMP(3) "
-                        + "WHERE id = ?", row.id());
-            } catch (Exception ex) {
-                long delay = Math.min(retryDelayMillis * (1L << Math.min(row.retryCount(), 10)), 300_000L);
-                jdbcTemplate.update("""
-                        UPDATE chat_message_outbox
-                           SET status = 0, retry_count = retry_count + 1,
-                               next_retry_at = ?, updated_at = CURRENT_TIMESTAMP(3)
-                         WHERE id = ?
-                        """, Timestamp.from(Instant.now().plusMillis(delay)), row.id());
-                log.warn("Chat outbox publish failed, outboxId={}, retryCount={}", row.id(),
-                        row.retryCount() + 1, ex);
+            Long conversationId = readConversationId(row);
+            if (conversationId == null) {
+                skippedIds.add(row.id());
+                continue;
+            }
+            String key = row.eventType() + ":" + row.recipientId() + ":" + conversationId;
+            OutboxRow existing = kept.get(key);
+            if (existing == null || row.id() > existing.id()) {
+                if (existing != null) {
+                    skippedIds.add(existing.id());
+                }
+                kept.put(key, row);
+            } else {
+                skippedIds.add(row.id());
             }
         }
+
+        if (!skippedIds.isEmpty()) {
+            markDone(skippedIds);
+        }
+
+        List<Long> successfulIds = Collections.synchronizedList(new ArrayList<>());
+        List<CompletableFuture<Void>> futures = new ArrayList<>(kept.size());
+        for (OutboxRow row : kept.values()) {
+            futures.add(CompletableFuture.runAsync(() -> {
+                try {
+                    MessageVO message = objectMapper.readValue(row.payload(), MessageVO.class);
+                    dispatch(row, message);
+                    successfulIds.add(row.id());
+                } catch (Exception ex) {
+                    retry(row, ex);
+                }
+            }, dispatchExecutor));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        if (!successfulIds.isEmpty()) {
+            markDone(successfulIds);
+        }
+    }
+
+    private Long readConversationId(OutboxRow row) {
+        try {
+            return objectMapper.readValue(row.payload(), MessageVO.class).getSessionId();
+        } catch (JsonProcessingException ex) {
+            return null;
+        }
+    }
+
+    private void markDone(List<Long> ids) {
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        jdbcTemplate.update("UPDATE chat_message_outbox SET status = 2, updated_at = CURRENT_TIMESTAMP(3) "
+                + "WHERE id IN (" + placeholders + ")", ids.toArray());
+    }
+
+    private void retry(OutboxRow row, Exception ex) {
+        long delay = Math.min(retryDelayMillis * (1L << Math.min(row.retryCount(), 10)), 300_000L);
+        jdbcTemplate.update("""
+                UPDATE chat_message_outbox
+                   SET status = 0, retry_count = retry_count + 1,
+                       next_retry_at = ?, updated_at = CURRENT_TIMESTAMP(3)
+                 WHERE id = ?
+                """, Timestamp.from(Instant.now().plusMillis(delay)), row.id());
+        log.warn("Chat outbox publish failed, outboxId={}, retryCount={}", row.id(),
+                row.retryCount() + 1, ex);
     }
 
     private void dispatch(OutboxRow row, MessageVO message) {
