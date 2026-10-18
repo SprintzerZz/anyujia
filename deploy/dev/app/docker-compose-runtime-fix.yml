@@ -1,0 +1,77 @@
+services:
+  frameworkjava-mysql:
+    ports: !reset
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysql --user=appdev -h127.0.0.1 --password=\"change-me\" -e \"SELECT 1;\""]
+
+  frameworkjava-nacos:
+    environment:
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-change-me}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-change-me}
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-change-me-change-me-change-me-change-me}
+      MYSQL_SERVICE_USER: appdev
+      MYSQL_SERVICE_PASSWORD: change-me
+
+  frameworkjava-redis-sentinel-1:
+    command:
+      - sh
+      - -c
+      - |
+        until getent hosts frameworkjava-redis-master >/dev/null 2>&1; do sleep 1; done
+        MASTER_IP=$$(getent ahostsv4 frameworkjava-redis-master | awk 'NR==1 {print $$1}')
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster $${MASTER_IP} 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        exec redis-sentinel /tmp/sentinel.conf
+
+  frameworkjava-redis-sentinel-2:
+    command:
+      - sh
+      - -c
+      - |
+        until getent hosts frameworkjava-redis-master >/dev/null 2>&1; do sleep 1; done
+        MASTER_IP=$$(getent ahostsv4 frameworkjava-redis-master | awk 'NR==1 {print $$1}')
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster $${MASTER_IP} 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        exec redis-sentinel /tmp/sentinel.conf
+
+  frameworkjava-redis-sentinel-3:
+    command:
+      - sh
+      - -c
+      - |
+        until getent hosts frameworkjava-redis-master >/dev/null 2>&1; do sleep 1; done
+        MASTER_IP=$$(getent ahostsv4 frameworkjava-redis-master | awk 'NR==1 {print $$1}')
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster $${MASTER_IP} 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        exec redis-sentinel /tmp/sentinel.conf
+
+  frameworkjava-chat:
+    environment:
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
