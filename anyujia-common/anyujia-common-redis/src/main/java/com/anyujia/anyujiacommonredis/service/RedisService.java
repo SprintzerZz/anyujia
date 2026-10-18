@@ -230,7 +230,13 @@ public class RedisService {
      * @return 写入后 Redis 列表长度；写入失败时返回 0
      */
     public <T> long setCacheList(final String key, final List<T> dataList) {
-        Long count = redisTemplate.opsForList().rightPushAll(key, dataList);
+        if (dataList == null || dataList.isEmpty()) {
+            return 0L;
+        }
+        // Push elements individually so the list round-trips through getCacheList;
+        // passing the List directly hits the varargs overload and stores the whole
+        // collection as a single serialized array element.
+        Long count = redisTemplate.opsForList().rightPushAll(key, dataList.toArray(new Object[0]));
         return count == null ? 0L : count;
     }
 
