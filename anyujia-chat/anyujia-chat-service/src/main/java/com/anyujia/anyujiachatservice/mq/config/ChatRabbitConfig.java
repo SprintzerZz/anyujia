@@ -2,9 +2,12 @@ package com.anyujia.anyujiachatservice.mq.config;
 
 import com.anyujia.anyujiachatservice.realtime.ChatNodeIdentity;
 import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.retry.MessageBatchRecoverer;
 import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
@@ -13,6 +16,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 
 @Configuration
 public class ChatRabbitConfig {
@@ -99,6 +103,7 @@ public class ChatRabbitConfig {
     public SimpleRabbitListenerContainerFactory chatPersistBatchListenerContainerFactory(
             SimpleRabbitListenerContainerFactoryConfigurer configurer,
             ConnectionFactory connectionFactory,
+            @Qualifier("chatPersistRetryInterceptor") RetryOperationsInterceptor retryInterceptor,
             @Value("${chat.rabbit.persist.batch-size:50}") int configuredBatchSize,
             @Value("${chat.rabbit.persist.receive-timeout-millis:100}") long receiveTimeoutMillis) {
         int batchSize = Math.max(1, Math.min(configuredBatchSize, 200));
@@ -109,7 +114,30 @@ public class ChatRabbitConfig {
         factory.setBatchSize(batchSize);
         factory.setReceiveTimeout(Math.max(1L, receiveTimeoutMillis));
         factory.setPrefetchCount(Math.min(batchSize * 2, 400));
+        factory.setDefaultRequeueRejected(false);
+        factory.setAdviceChain(retryInterceptor);
         return factory;
+    }
+
+    @Bean("chatPersistRetryInterceptor")
+    public RetryOperationsInterceptor chatPersistRetryInterceptor(
+            @Value("${chat.rabbit.persist.retry.max-attempts:4}") int configuredMaxAttempts,
+            @Value("${chat.rabbit.persist.retry.initial-interval-millis:500}") long configuredInitialInterval,
+            @Value("${chat.rabbit.persist.retry.multiplier:2.0}") double configuredMultiplier,
+            @Value("${chat.rabbit.persist.retry.max-interval-millis:8000}") long configuredMaxInterval) {
+        int maxAttempts = Math.max(1, Math.min(configuredMaxAttempts, 10));
+        long initialInterval = Math.max(1L, configuredInitialInterval);
+        double multiplier = Math.max(1.0d, configuredMultiplier);
+        long maxInterval = Math.max(initialInterval, configuredMaxInterval);
+        MessageBatchRecoverer rejectBatch = (messages, cause) -> {
+            throw new AmqpRejectAndDontRequeueException(
+                    "Chat persistence retries exhausted for batch of " + messages.size(), cause);
+        };
+        return RetryInterceptorBuilder.stateless()
+                .maxAttempts(maxAttempts)
+                .backOffOptions(initialInterval, multiplier, maxInterval)
+                .recoverer(rejectBatch)
+                .build();
     }
 
     @Bean

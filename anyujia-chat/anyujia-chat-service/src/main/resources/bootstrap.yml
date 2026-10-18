@@ -42,7 +42,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,threadpool
+        include: health,info,metrics,prometheus,threadpool,chatPersistDlq
 
 chat:
   outbox:
@@ -71,6 +71,11 @@ chat:
     persist:
       batch-size: ${CHAT_RABBIT_PERSIST_BATCH_SIZE:50}
       receive-timeout-millis: ${CHAT_RABBIT_PERSIST_RECEIVE_TIMEOUT_MILLIS:100}
+      retry:
+        max-attempts: ${CHAT_RABBIT_PERSIST_RETRY_MAX_ATTEMPTS:4}
+        initial-interval-millis: ${CHAT_RABBIT_PERSIST_RETRY_INITIAL_INTERVAL_MILLIS:500}
+        multiplier: ${CHAT_RABBIT_PERSIST_RETRY_MULTIPLIER:2.0}
+        max-interval-millis: ${CHAT_RABBIT_PERSIST_RETRY_MAX_INTERVAL_MILLIS:8000}
   websocket:
     idle-timeout-seconds: ${CHAT_WEBSOCKET_IDLE_TIMEOUT_SECONDS:150}
     idle-scan-millis: ${CHAT_WEBSOCKET_IDLE_SCAN_MILLIS:30000}
