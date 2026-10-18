@@ -12,9 +12,14 @@ public class ChatMetrics {
     private final Timer messageSendTimer;
     private final Timer messageSyncTimer;
     private final Timer messageDbWriteTimer;
+    private final Timer persistLatencyTimer;
     private final Counter pushFailureCounter;
     private final Counter rateLimitedCounter;
     private final AtomicInteger onlineConnections = new AtomicInteger();
+    private final AtomicInteger outboxPendingRows = new AtomicInteger();
+    private final AtomicInteger outboxProcessingRows = new AtomicInteger();
+    private final AtomicInteger persistQueueDepth = new AtomicInteger();
+    private final AtomicInteger persistDlqDepth = new AtomicInteger();
 
     public ChatMetrics(MeterRegistry registry) {
         this.messageSendTimer = Timer.builder("chat_message_send_duration")
@@ -26,6 +31,9 @@ public class ChatMetrics {
         this.messageDbWriteTimer = Timer.builder("chat_message_db_write_duration")
                 .description("Chat message persistence and conversation index update duration")
                 .register(registry);
+        this.persistLatencyTimer = Timer.builder("chat_persist_latency")
+                .description("End-to-end persistence latency from MQ consume to committed ACK")
+                .register(registry);
         this.pushFailureCounter = Counter.builder("chat_message_push_failures_total")
                 .description("Persisted chat messages whose online push failed")
                 .register(registry);
@@ -34,6 +42,18 @@ public class ChatMetrics {
                 .register(registry);
         registry.gauge("chat_websocket_online_connections",
                 onlineConnections,
+                AtomicInteger::get);
+        registry.gauge("chat_outbox_pending_rows",
+                outboxPendingRows,
+                AtomicInteger::get);
+        registry.gauge("chat_outbox_processing_rows",
+                outboxProcessingRows,
+                AtomicInteger::get);
+        registry.gauge("chat_persist_queue_depth",
+                persistQueueDepth,
+                AtomicInteger::get);
+        registry.gauge("chat_persist_dlq_depth",
+                persistDlqDepth,
                 AtomicInteger::get);
     }
 
@@ -47,6 +67,20 @@ public class ChatMetrics {
 
     public void recordDbWrite(long startNanos) {
         messageDbWriteTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordPersistLatency(long startNanos) {
+        persistLatencyTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void setOutboxBacklog(int pending, int processing) {
+        outboxPendingRows.set(pending);
+        outboxProcessingRows.set(processing);
+    }
+
+    public void setPersistQueueDepths(int queueDepth, int dlqDepth) {
+        persistQueueDepth.set(queueDepth);
+        persistDlqDepth.set(dlqDepth);
     }
 
     public void incrementPushFailure() {
