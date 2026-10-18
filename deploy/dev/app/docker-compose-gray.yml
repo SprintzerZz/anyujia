@@ -1,0 +1,11 @@
+# Chat gray rollout override.
+# Usage:
+#   docker compose -p frameworkjava -f docker-compose-mid.yml -f docker-compose-gray.yml up -d frameworkjava-chat
+services:
+  frameworkjava-chat:
+    environment:
+      CHAT_MESSAGE_SHARDING_ENABLED: "true"
+      CHAT_MESSAGE_SHARDING_DUAL_WRITE: "true"
+      CHAT_MESSAGE_SHARDING_READ_FALLBACK: "true"
+      CHAT_MESSAGE_SHARDING_VERIFICATION_ENABLED: "true"
+      CHAT_MESSAGE_SHARDING_VERIFICATION_FIXED_DELAY_MILLIS: "60000"
