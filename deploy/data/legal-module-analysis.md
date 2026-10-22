@@ -1186,6 +1186,18 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 - `deploy/perf/results/legal-agent-gateway-bounded-resource-300-2026-10-23.json`
 - `deploy/perf/results/legal-agent-gateway-bounded-pool-300-2026-10-23.json`
 
+### 11.0.30 本轮第三十一阶段：增加 Gateway 转发层硬并发闸门
+
+为避免请求继续进入 Reactor Netty pending acquire 队列，`GatewayForwardMetricsFilter` 增加非阻塞 `Semaphore.tryAcquire()`：
+
+- 默认最多 256 个下游转发中的请求，可通过 `GATEWAY_FORWARD_MAX_IN_FLIGHT` 调整。
+- 获取不到许可时立即返回 HTTP 503，并返回 `Retry-After: 1`，不阻塞 Reactor 事件循环。
+- 新增 `gateway.forward.rejected` 拒绝计数器。
+- 新增 `gateway.forward.permits.available` 可用许可 Gauge。
+- 请求完成、异常或取消时通过 `doFinally` 释放许可，避免异常路径泄漏。
+
+下一步使用 300 req/s 实时采样复测，重点比较 `gateway.forward.rejected`、连接池 pending、`gateway.forward.active`、P95/P99 和容器资源峰值。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

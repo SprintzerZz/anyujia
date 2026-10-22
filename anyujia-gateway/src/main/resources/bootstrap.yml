@@ -85,6 +85,10 @@ spring:
           enabled: false
           lower-case-service-id: true
 
+gateway:
+  forward:
+    max-in-flight: ${GATEWAY_FORWARD_MAX_IN_FLIGHT:256}
+
 logging:
   pattern:
     console: "[%thread] %-5level %logger{36} - %msg%n"
