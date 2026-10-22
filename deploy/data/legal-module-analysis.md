@@ -1057,6 +1057,39 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 
 这证明本阶段配置已经真正作用于 Gateway 下游 Reactor Netty 客户端，而不是仅停留在 YAML 配置或应用启动层面。单请求验证只用于链路和指标正确性验收，不能作为容量结论；下一步继续执行有效 Legal 路由上的 100/200/300 req/s 阶梯压测，同时采集连接池 active/pending 峰值、forward P95/P99、CPU、内存和失败原因。
 
+### 11.0.25 本轮第二十六阶段：新连接池下 Gateway → Legal 阶梯压测
+
+使用真实 Gateway → Nacos → Legal 链路、临时租户登录态和 `legal-agent-load.js`，分别执行 100/200/300 req/s、每档 20 秒的入队压测。测试目标是验证显式 ConnectionProvider 是否导致连接获取排队，以及确认新配置下 Gateway 转发长尾变化。
+
+#### 阶梯结果
+
+| 目标速率 | 实际请求数 | 实际吞吐 | HTTP 失败 | dropped iteration | 平均耗时 | P95 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 req/s | 1,946 | 97.01 req/s | 0 | 55 | 435.34 ms | 1.77 s |
+| 200 req/s | 4,001 | 199.68 req/s | 0 | 0 | 143.51 ms | 413.40 ms |
+| 300 req/s | 6,000 | 292.95 req/s | 0 | 0 | 186.88 ms | 547.52 ms |
+
+#### 连接池与资源观测
+
+- 连接池 `name=gateway`，远端为 Legal 容器 `:18086`。
+- 压测结束后 `reactor.netty.connection.provider.active.connections=0`。
+- 压测结束后 `reactor.netty.connection.provider.pending.connections=0`，未观察到请求完成后仍持续堆积的连接获取等待。
+- 三档累计 `gateway.forward` 记录 11,947 次，累计耗时 1,994.11 秒，最大单次 2.29 秒。
+- 压测结束后采样：Gateway CPU 约 0.6%、内存约 639 MiB；Legal CPU 约 33.6%、内存约 841 MiB。该采样是结束时状态，不代表峰值。
+
+#### 结论
+
+- 新连接池配置已在 200/300 req/s 档稳定承载目标请求速率，HTTP 层未出现失败；连接池 pending 在结束时归零，未证明存在连接池永久泄漏或无限等待。
+- 入队 P95 仍未达到 200 ms 目标：200 req/s 为 413.40 ms，300 req/s 为 547.52 ms；瓶颈仍在 Legal 入队链路/下游处理，而不是单纯连接池等待。
+- 100 档出现 55 个 k6 调度层 dropped iteration，不能将其当作 HTTP 失败；该档的 P95 受本地 k6 VU 调度影响，需结合 200/300 档解读。
+- 本轮没有在请求进行中采集 active/pending 峰值，因此不能据此宣称连接池峰值容量；下一步增加 1 秒采样器，记录压测过程中的 active/pending、Gateway forward.active、JVM/容器 CPU 内存峰值，再决定是否需要把 256 连接上限继续调高或增加入口限流。
+
+原始结果：
+
+- `deploy/perf/results/legal-agent-gateway-pool-100-2026-10-23.json`
+- `deploy/perf/results/legal-agent-gateway-pool-200-2026-10-23.json`
+- `deploy/perf/results/legal-agent-gateway-pool-300-2026-10-23.json`
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
