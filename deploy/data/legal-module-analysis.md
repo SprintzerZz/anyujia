@@ -1033,6 +1033,30 @@ Reactor Netty 连接池指标是按实际连接使用后惰性注册的，仅启
 
 下一步需要在完整的 Gateway → Legal 运行编排下，使用真实租户 Token 调用有效 Legal 路由，再采集 `reactor.netty.connection.provider.*`、`gateway.forward.active`、容器 CPU/内存，并重跑 100/200/300 req/s 阶梯压测。
 
+### 11.0.24 本轮第二十五阶段：Gateway → Legal 真实链路与连接池指标验证
+
+本阶段补齐了可运行的 Gateway → Nacos → Legal 链路，并使用临时租户登录态调用有效的 `POST /legal/agent/tasks` 接口。测试租户和请求数据仅用于本地验证，完成后清理，不作为业务数据保留。
+
+#### 实际结果
+
+| 指标 | 结果 |
+| --- | ---: |
+| Gateway → Legal 请求 | HTTP 200 |
+| Gateway 路由 | `legal-agent` |
+| `gateway.forward` 次数 | 1 |
+| `gateway.forward` 耗时 | 354.27 ms |
+| `reactor.netty.connection.provider.active.connections` | 0（请求完成后） |
+| `reactor.netty.connection.provider.pending.connections` | 0（请求完成后） |
+| 连接池名称 | `gateway` |
+| 连接池远端 | Legal 容器 `:18086` |
+
+Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remote.address` 和连接池 `id` 标签：
+
+- `reactor.netty.connection.provider.active.connections`
+- `reactor.netty.connection.provider.pending.connections`
+
+这证明本阶段配置已经真正作用于 Gateway 下游 Reactor Netty 客户端，而不是仅停留在 YAML 配置或应用启动层面。单请求验证只用于链路和指标正确性验收，不能作为容量结论；下一步继续执行有效 Legal 路由上的 100/200/300 req/s 阶梯压测，同时采集连接池 active/pending 峰值、forward P95/P99、CPU、内存和失败原因。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
