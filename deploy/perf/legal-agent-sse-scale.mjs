@@ -48,7 +48,7 @@ async function connect(index) {
       const read = await reader.read();
       if (read.done) break;
       const text = decoder.decode(read.value, { stream: true });
-      result.heartbeats += (text.match(/event: heartbeat/g) || []).length;
+      result.heartbeats += (text.match(/event:\s*heartbeat/g) || []).length;
     }
     await reader.cancel();
   } catch (error) {

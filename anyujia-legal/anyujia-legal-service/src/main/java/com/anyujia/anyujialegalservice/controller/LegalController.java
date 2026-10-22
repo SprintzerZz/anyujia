@@ -191,6 +191,14 @@ public class LegalController implements LegalFeignClient {
             emitter.complete();
         });
         emitter.onError(ex -> cleanup.run());
+        try {
+            // 先刷新响应头并确认连接已建立，事件重放和心跳随后异步执行。
+            emitter.send(SseEmitter.event().name("connected").data("ok"));
+        } catch (java.io.IOException ex) {
+            cleanup.run();
+            emitter.completeWithError(ex);
+            return emitter;
+        }
         AtomicReference<Runnable> scheduleFlushRef = new AtomicReference<>();
         Runnable flush = () -> {
             long writeStartedAt = System.nanoTime();
