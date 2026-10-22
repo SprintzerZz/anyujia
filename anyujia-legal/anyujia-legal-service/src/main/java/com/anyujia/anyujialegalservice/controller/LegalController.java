@@ -18,6 +18,7 @@ import com.anyujia.anyujialegalservice.service.LegalAgentService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskEventService;
 import com.anyujia.anyujialegalservice.service.LegalAgentEventSubscriptionService;
+import com.anyujia.anyujialegalservice.service.LegalAgentMetrics;
 import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTaskEvent;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
@@ -37,6 +38,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -77,6 +81,11 @@ public class LegalController implements LegalFeignClient {
     @Qualifier("legalSseConnectionLimiter")
     @Autowired
     private Semaphore sseConnectionLimiter;
+    @Qualifier("legalSseWriterExecutor")
+    @Autowired
+    private Executor sseWriterExecutor;
+    @Autowired
+    private LegalAgentMetrics sseMetrics;
 
     @PostMapping("/contracts/upload")
     public ApiResult<ContractVO> uploadContract(@RequestHeader("userId") Long userId,
@@ -158,7 +167,7 @@ public class LegalController implements LegalFeignClient {
         AtomicReference<AutoCloseable> subscriptionRef = new AtomicReference<>();
         AtomicLong cursor = new AtomicLong(lastEventId == null ? 0L : lastEventId);
         AtomicBoolean flushScheduled = new AtomicBoolean();
-        AtomicBoolean dirty = new AtomicBoolean(true);
+        ArrayBlockingQueue<Long> wakeupQueue = new ArrayBlockingQueue<>(100);
         Runnable cleanup = () -> {
             if (released.compareAndSet(false, true)) {
                 ScheduledFuture<?> heartbeat = heartbeatRef.get();
@@ -184,11 +193,12 @@ public class LegalController implements LegalFeignClient {
         emitter.onError(ex -> cleanup.run());
         AtomicReference<Runnable> scheduleFlushRef = new AtomicReference<>();
         Runnable flush = () -> {
+            long writeStartedAt = System.nanoTime();
             try {
                 if (released.get()) {
                     return;
                 }
-                dirty.set(false);
+                wakeupQueue.clear();
                 var events = legalAgentTaskEventService.after(userId, taskId, cursor.get(), 50);
                 for (LegalAgentTaskEvent event : events) {
                     emitter.send(SseEmitter.event().id(String.valueOf(event.getId()))
@@ -200,27 +210,40 @@ public class LegalController implements LegalFeignClient {
                         return;
                     }
                 }
-                if (events.size() >= 50) {
-                    dirty.set(true);
-                }
             } catch (RuntimeException | java.io.IOException ex) {
                 cleanup.run();
                 emitter.completeWithError(ex);
             } finally {
+                sseMetrics.recordSseWrite(System.nanoTime() - writeStartedAt);
                 flushScheduled.set(false);
-                if (dirty.get() && !released.get()) {
+                if (!wakeupQueue.isEmpty() && !released.get()) {
                     scheduleFlushRef.get().run();
                 }
             }
         };
         Runnable scheduleFlush = () -> {
-            dirty.set(true);
             if (flushScheduled.compareAndSet(false, true)) {
-                sseScheduler.execute(flush);
+                try {
+                    sseWriterExecutor.execute(flush);
+                } catch (RejectedExecutionException ex) {
+                    sseMetrics.recordSseWriterRejected();
+                    cleanup.run();
+                    emitter.completeWithError(ex);
+                }
             }
         };
         scheduleFlushRef.set(scheduleFlush);
-        subscriptionRef.set(legalAgentEventSubscriptionService.subscribe(taskId, scheduleFlush));
+        subscriptionRef.set(legalAgentEventSubscriptionService.subscribe(taskId, message -> {
+            String eventId = message.getValue().get("eventId");
+            long wakeupId = eventId == null ? 0L : Long.parseLong(eventId);
+            if (!wakeupQueue.offer(wakeupId)) {
+                wakeupQueue.clear();
+                wakeupQueue.offer(wakeupId);
+                sseMetrics.recordSseQueueOverflow();
+            }
+            scheduleFlush.run();
+        }));
+        wakeupQueue.offer(cursor.get());
         scheduleFlush.run();
         heartbeatRef.set(sseScheduler.scheduleWithFixedDelay(() -> {
             try {

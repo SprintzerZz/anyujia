@@ -2,6 +2,7 @@ package com.anyujia.anyujialegalservice.service;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,5 +33,23 @@ public class LegalAgentMetrics {
         Counter.builder("legal.agent.sse.stream.notification")
                 .description("Legal Agent SSE notifications received from Redis Stream")
                 .register(registry).increment();
+    }
+
+    public void recordSseQueueOverflow() {
+        Counter.builder("legal.agent.sse.queue.overflow")
+                .description("Legal Agent SSE wake-up queue overflows")
+                .register(registry).increment();
+    }
+
+    public void recordSseWriterRejected() {
+        Counter.builder("legal.agent.sse.writer.rejected")
+                .description("Legal Agent SSE writer executor rejections")
+                .register(registry).increment();
+    }
+
+    public void recordSseWrite(long nanos) {
+        Timer.builder("legal.agent.sse.write")
+                .description("Legal Agent SSE write duration")
+                .register(registry).record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
     }
 }

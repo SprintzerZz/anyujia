@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,7 +27,7 @@ public class LegalAgentEventSubscriptionService implements StreamListener<String
     private final LegalAgentMetrics metrics;
     @Value("${legal.agent.events.stream-key:legal:agent:events}")
     private String streamKey;
-    private final ConcurrentHashMap<Long, CopyOnWriteArrayList<Runnable>> listeners = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CopyOnWriteArrayList<Consumer<MapRecord<String, String, String>>>> listeners = new ConcurrentHashMap<>();
     private StreamMessageListenerContainer<String, MapRecord<String, String, String>> container;
 
     @PostConstruct
@@ -49,12 +50,12 @@ public class LegalAgentEventSubscriptionService implements StreamListener<String
         }
     }
 
-    public AutoCloseable subscribe(Long taskId, Runnable listener) {
+    public AutoCloseable subscribe(Long taskId, Consumer<MapRecord<String, String, String>> listener) {
         listeners.computeIfAbsent(taskId, ignored -> new CopyOnWriteArrayList<>()).add(listener);
         AtomicBoolean closed = new AtomicBoolean();
         return () -> {
             if (closed.compareAndSet(false, true)) {
-                List<Runnable> taskListeners = listeners.get(taskId);
+                List<Consumer<MapRecord<String, String, String>>> taskListeners = listeners.get(taskId);
                 if (taskListeners != null) {
                     taskListeners.remove(listener);
                     if (taskListeners.isEmpty()) {
@@ -71,14 +72,14 @@ public class LegalAgentEventSubscriptionService implements StreamListener<String
         if (taskId == null) {
             return;
         }
-        List<Runnable> taskListeners = listeners.get(Long.valueOf(taskId));
+        List<Consumer<MapRecord<String, String, String>>> taskListeners = listeners.get(Long.valueOf(taskId));
         if (taskListeners == null) {
             return;
         }
         metrics.recordStreamNotification();
         taskListeners.forEach(listener -> {
             try {
-                listener.run();
+                listener.accept(message);
             } catch (RuntimeException ex) {
                 log.warn("Legal Agent SSE listener failed, taskId={}", taskId, ex);
             }

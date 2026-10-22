@@ -67,6 +67,9 @@ legal:
   sse:
     scheduler-pool-size: ${LEGAL_SSE_SCHEDULER_POOL_SIZE:4}
     max-connections: ${LEGAL_SSE_MAX_CONNECTIONS:2000}
+    writer-core-pool-size: ${LEGAL_SSE_WRITER_CORE_POOL_SIZE:8}
+    writer-max-pool-size: ${LEGAL_SSE_WRITER_MAX_POOL_SIZE:32}
+    writer-queue-capacity: ${LEGAL_SSE_WRITER_QUEUE_CAPACITY:2000}
   agent:
     core-pool-size: ${LEGAL_AGENT_CORE_POOL_SIZE:4}
     max-pool-size: ${LEGAL_AGENT_MAX_POOL_SIZE:16}

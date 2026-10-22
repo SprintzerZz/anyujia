@@ -32,6 +32,12 @@ public class LegalAsyncConfig {
     private int sseSchedulerPoolSize;
     @Value("${legal.sse.max-connections:2000}")
     private int sseMaxConnections;
+    @Value("${legal.sse.writer-core-pool-size:8}")
+    private int sseWriterCorePoolSize;
+    @Value("${legal.sse.writer-max-pool-size:32}")
+    private int sseWriterMaxPoolSize;
+    @Value("${legal.sse.writer-queue-capacity:2000}")
+    private int sseWriterQueueCapacity;
     @Bean(name = "legalAssessmentExecutor")
     public Executor legalAssessmentExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -81,5 +87,21 @@ public class LegalAsyncConfig {
     @Bean(name = "legalSseConnectionLimiter")
     public Semaphore legalSseConnectionLimiter() {
         return new Semaphore(Math.max(1, sseMaxConnections));
+    }
+
+    @Bean(name = "legalSseWriterExecutor")
+    public Executor legalSseWriterExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(sseWriterCorePoolSize);
+        executor.setMaxPoolSize(Math.max(sseWriterCorePoolSize, sseWriterMaxPoolSize));
+        executor.setQueueCapacity(sseWriterQueueCapacity);
+        executor.setThreadNamePrefix("legal-sse-writer-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        log.info("Legal SSE writer executor configured: core={}, max={}, queue={}",
+                sseWriterCorePoolSize, sseWriterMaxPoolSize, sseWriterQueueCapacity);
+        return executor;
     }
 }
