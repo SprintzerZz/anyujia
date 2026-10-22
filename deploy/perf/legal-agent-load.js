@@ -16,8 +16,7 @@ const e2eLatency = new Trend('legal_agent_e2e_latency', true);
 const enqueueFailures = new Counter('legal_agent_enqueue_failures');
 const sseFailures = new Counter('legal_agent_sse_failures');
 
-export const options = {
-  scenarios: {
+const scenarios = {
     enqueue: {
       executor: 'constant-arrival-rate',
       rate: enqueueRate,
@@ -38,7 +37,16 @@ export const options = {
       exec: 'submitAndStream',
       startTime: enqueueDuration,
     },
-  },
+};
+
+const selectedScenarios = __ENV.SCENARIO === 'enqueue'
+  ? { enqueue: scenarios.enqueue }
+  : __ENV.SCENARIO === 'end_to_end'
+    ? { end_to_end: scenarios.end_to_end }
+    : scenarios;
+
+export const options = {
+  scenarios: selectedScenarios,
   thresholds: {
     legal_agent_enqueue_latency: ['p(95)<200', 'p(99)<500'],
     legal_agent_e2e_latency: ['p(95)<8000', 'p(99)<15000'],

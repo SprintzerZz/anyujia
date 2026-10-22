@@ -56,6 +56,15 @@ Do not claim a capacity result unless the run records HTTP status, SSE connect
 latency, writer-pool queue/rejections, queue overflow, Redis Stream errors,
 MySQL connection usage and container CPU/memory.
 
+Use `SCENARIO=enqueue` or `SCENARIO=end_to_end` to run one stage independently;
+the default runs both stages sequentially.
+
+For actual SSE connection-capacity measurements, use
+`legal-agent-sse-scale.mjs`. It uses Node fetch streaming and records the
+latency when response headers arrive, instead of waiting for the SSE body to
+finish like a normal k6 HTTP request. It keeps each connection open long enough
+to observe heartbeats and writes a JSON result file.
+
 ## Safe single-host baseline runner
 
 Use `chat-baseline-diagnose.ps1` for the evidence-gated database baseline. Its
