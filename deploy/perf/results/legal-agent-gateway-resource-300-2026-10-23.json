@@ -1,187 +1,68 @@
-{
-    "root_group": {
-        "id": "d41d8cd98f00b204e9800998ecf8427e",
-        "groups": {},
-        "checks": {
-                "agent enqueue status is 200": {
-                    "name": "agent enqueue status is 200",
-                    "path": "::agent enqueue status is 200",
-                    "id": "1c7bc534ffe6bf7e655f9039cd1e173c",
-                    "passes": 1924,
-                    "fails": 2211
-                },
-                "agent enqueue returns task id": {
-                    "id": "58cfc17bf554165b344e7bf5969a5333",
-                    "passes": 1924,
-                    "fails": 2211,
-                    "name": "agent enqueue returns task id",
-                    "path": "::agent enqueue returns task id"
-                }
-            },
-        "name": "",
-        "path": ""
-    },
-    "metrics": {
-        "iterations": {
-            "count": 4135,
-            "rate": 147.50296532381225
-        },
-        "http_req_sending": {
-            "med": 0.03295,
-            "max": 55.007903,
-            "p(90)": 0.09499779999999998,
-            "p(95)": 0.1713553999999995,
-            "p(99)": 1.5336819399999995,
-            "avg": 0.12483961741233351,
-            "min": 0.008119
-        },
-        "data_received": {
-            "count": 1259071,
-            "rate": 44913.35091976242
-        },
-        "iteration_duration": {
-            "p(95)": 8842.569393499998,
-            "p(99)": 10102.0047908,
-            "avg": 5452.898141450801,
-            "min": 52.355316,
-            "med": 5754.290598,
-            "max": 11182.248806,
-            "p(90)": 8027.755886999999
-        },
-        "http_req_duration": {
-            "p(95)": 9048.292917699999,
-            "p(99)": 10114.51741762,
-            "avg": 5688.544160028043,
-            "min": 51.230957,
-            "med": 6008.817859,
-            "max": 11181.704281,
-            "p(90)": 8222.4000686
-        },
-        "http_req_tls_handshaking": {
-            "min": 0,
-            "med": 0,
-            "max": 0,
-            "p(90)": 0,
-            "p(95)": 0,
-            "p(99)": 0,
-            "avg": 0
-        },
-        "http_req_waiting": {
-            "med": 5940.659257,
-            "max": 11181.016032,
-            "p(90)": 8175.023420399999,
-            "p(95)": 8977.194436099995,
-            "p(99)": 10113.72416358,
-            "avg": 5563.810346526958,
-            "min": 44.298814
-        },
-        "http_req_receiving": {
-            "max": 3028.652422,
-            "p(90)": 398.068384,
-            "p(95)": 559.6065687999996,
-            "p(99)": 1326.0910764999949,
-            "avg": 124.60897388367628,
-            "min": 0.017559,
-            "med": 11.86955
-        },
-        "http_req_blocked": {
-            "min": 0.002077,
-            "med": 0.007937,
-            "max": 91.253264,
-            "p(90)": 0.4218975999999998,
-            "p(95)": 1.1582522999999985,
-            "p(99)": 11.573124019999987,
-            "avg": 0.7163169475211638
-        },
-        "data_sent": {
-            "count": 1848285,
-            "rate": 65931.68519069464
-        },
-        "vus_max": {
-            "value": 1447,
-            "min": 300,
-            "max": 1447
-        },
-        "legal_agent_sse_failures": {
-            "count": 0,
-            "rate": 0,
-            "thresholds": {
-                "count<1": false
-            }
-        },
-        "vus": {
-            "min": 64,
-            "max": 1442,
-            "value": 64
-        },
-        "legal_agent_enqueue_failures": {
-            "rate": 78.87038847181353,
-            "count": 2211,
-            "thresholds": {
-                "count<1": true
-            }
-        },
-        "http_req_failed": {
-            "passes": 2211,
-            "fails": 1924,
-            "value": 0.5347037484885127
-        },
-        "legal_agent_enqueue_latency": {
-            "p(90)": 8222.4000686,
-            "p(95)": 9048.292917699999,
-            "p(99)": 10114.51741762,
-            "avg": 5688.544160028042,
-            "min": 51.230957,
-            "med": 6008.817859,
-            "max": 11181.704281,
-            "thresholds": {
-                "p(95)<200": true,
-                "p(99)<500": true
-            }
-        },
-        "http_req_connecting": {
-            "max": 89.192522,
-            "p(90)": 0.29417079999999995,
-            "p(95)": 0.8252461999999984,
-            "p(99)": 10.53669865999993,
-            "avg": 0.6478817071342207,
-            "min": 0,
-            "med": 0
-        },
-        "http_reqs": {
-            "count": 4135,
-            "rate": 147.50296532381225
-        },
-        "checks": {
-            "passes": 3848,
-            "fails": 4422,
-            "value": 0.4652962515114873
-        },
-        "dropped_iterations": {
-            "rate": 66.5636114375414,
-            "count": 1866
-        },
-        "http_req_duration{expected_response:true}": {
-            "avg": 4868.757655741687,
-            "min": 51.230957,
-            "med": 5514.228972,
-            "max": 8343.574455,
-            "p(90)": 6453.645486,
-            "p(95)": 6642.558564649999,
-            "p(99)": 7473.93658058
-        },
-        "legal_agent_e2e_latency": {
-            "avg": 0,
-            "min": 0,
-            "med": 0,
-            "max": 0,
-            "p(90)": 0,
-            "p(95)": 0,
-            "p(99)": 0,
-            "thresholds": {
-                "p(95)<8000": false,
-                "p(99)<15000": false
-            }
-        }
-    }
-}
+[
+  {
+    "timestamp": "2026-10-22T23:46:27.2332441+08:00",
+    "elapsedSeconds": 0.007,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 2.95,
+    "gatewayMemory": "513.6MiB",
+    "legalCpuPercent": 1.31,
+    "legalMemory": "581.4MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:46:32.2849537+08:00",
+    "elapsedSeconds": 5.059,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 2.17,
+    "gatewayMemory": "514.2MiB",
+    "legalCpuPercent": 2.42,
+    "legalMemory": "582.9MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:46:36.8313145+08:00",
+    "elapsedSeconds": 9.605,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 1.06,
+    "gatewayMemory": "514.8MiB",
+    "legalCpuPercent": 3.41,
+    "legalMemory": "583.9MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:46:42.2642702+08:00",
+    "elapsedSeconds": 15.038,
+    "connectionPoolActive": 256.0,
+    "connectionPoolPending": 220.0,
+    "gatewayForwardActive": 553.0,
+    "gatewayCpuPercent": 500.91,
+    "gatewayMemory": "573.6MiB",
+    "legalCpuPercent": 139.7,
+    "legalMemory": "610MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:46:48.9097578+08:00",
+    "elapsedSeconds": 21.684,
+    "connectionPoolActive": 256.0,
+    "connectionPoolPending": 239.0,
+    "gatewayForwardActive": 657.0,
+    "gatewayCpuPercent": 264.33,
+    "gatewayMemory": "627.1MiB",
+    "legalCpuPercent": 381.04,
+    "legalMemory": "750.8MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:47:00.3761975+08:00",
+    "elapsedSeconds": 33.15,
+    "connectionPoolActive": 256.0,
+    "connectionPoolPending": 378.0,
+    "gatewayForwardActive": 669.0,
+    "gatewayCpuPercent": 239.8,
+    "gatewayMemory": "797.9MiB",
+    "legalCpuPercent": 333.24,
+    "legalMemory": "895.2MiB"
+  }
+]

@@ -1004,7 +1004,7 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 针对 300 req/s 资源窗口中 `gateway.forward.active` 峰值达到 1,193、内存持续上涨且 HTTP Client 连接池指标缺失的问题，本阶段不再依赖默认 Elastic 连接池，改为使用 Spring Cloud Gateway 原生 `spring.cloud.gateway.httpclient.pool` 配置显式构造 Reactor Netty `ConnectionProvider`：
 
 - 固定连接池最大连接数默认 256，可通过 `GATEWAY_HTTPCLIENT_MAX_CONNECTIONS` 调整。
-- 连接池等待队列通过 `acquire-timeout=1000ms` 设定有界等待，避免慢下游导致请求无限排队。
+- 单个连接获取等待通过 `acquire-timeout=1000ms` 超时失败，避免慢下游请求永久等待；当前 Spring Cloud Gateway 原生 fixed pool 的 pending acquire 数量仍为无限，需后续增加自定义有界队列。
 - 增加最大空闲时间 30 秒、最大生命周期 5 分钟和 30 秒后台驱逐，减少失效连接长期占用。
 - 开启连接池 Micrometer 指标，配置名为 `gateway`，便于观测 active、idle、pending 等连接池状态；指标开关为 `GATEWAY_HTTPCLIENT_POOL_METRICS_ENABLED`。
 - 增加连接建立超时 3 秒、响应超时 15 秒，均保留环境变量覆盖能力。
@@ -1089,6 +1089,51 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 - `deploy/perf/results/legal-agent-gateway-pool-100-2026-10-23.json`
 - `deploy/perf/results/legal-agent-gateway-pool-200-2026-10-23.json`
 - `deploy/perf/results/legal-agent-gateway-pool-300-2026-10-23.json`
+
+### 11.0.26 本轮第二十七阶段：增加压测过程实时资源采样
+
+为避免只看压测结束时的 active/pending 和容器资源，本阶段新增 `deploy/perf/legal-gateway-resource-sampler.ps1`，以 1 秒间隔采集：
+
+- `reactor.netty.connection.provider.active.connections`
+- `reactor.netty.connection.provider.pending.connections`
+- `gateway.forward.active`
+- Gateway/Legal 容器 CPU 百分比和内存占用
+
+采样结果保存为 JSON，能够计算请求高峰期间的连接池和容器资源峰值。
+
+### 11.0.27 本轮第二十八阶段：实时采样确认连接池 pending 队列为主要瓶颈
+
+使用新增实时采样器执行 300 req/s、持续 30 秒的 Gateway → Legal 入队压测，采样间隔 1 秒。该轮不是容量承诺，而是用于捕获高峰期间的连接池和容器资源状态。
+
+#### 压测结果
+
+| 指标 | 结果 |
+| --- | ---: |
+| 实际 HTTP 请求 | 7,764 |
+| 实际吞吐 | 233.50 req/s |
+| HTTP 失败 | 4,981（64.15%） |
+| dropped iteration | 1,237 |
+| 入队平均耗时 | 3.16 s |
+| 入队 P95/P99 | 6.44 s / 10.22 s |
+| 连接池 active 峰值 | 256 |
+| 连接池 pending 峰值 | 378 |
+| `gateway.forward.active` 峰值 | 669 |
+| Gateway CPU 峰值 | 500.91% |
+| Gateway 内存采样峰值 | 797.9 MiB |
+| Legal CPU 峰值 | 381.04% |
+| Legal 内存采样峰值 | 895.2 MiB |
+
+#### 结论
+
+- `active.connections=256` 证明显式最大连接数已经生效；同时 `pending.connections=378` 证明下游变慢时请求仍在连接池获取队列中等待。
+- `gateway.forward.active=669` 与连接池 pending 同时升高，说明 Gateway 转发并发和连接获取排队是本轮长尾及失败率上升的直接证据。
+- 当前 Spring Cloud Gateway 的 fixed pool 构造链路将 `pendingAcquireMaxCount` 固定为 `-1`，因此现有 YAML 只能限制单个请求等待时长，不能限制等待队列长度。
+- 下一步应实现自定义 `HttpClientFactory/ConnectionProvider`，显式设置 `pendingAcquireMaxCount`，并在超过队列上限时快速失败；随后重新压测验证 Gateway CPU、内存和 Legal 入队失败率是否下降。
+
+采样原始结果：
+
+- `deploy/perf/results/legal-agent-gateway-resource-300-2026-10-23.json`
+- `deploy/perf/results/legal-agent-gateway-pool-300-sampled-2026-10-23.json`
 
 ## 12. 参考文件
 

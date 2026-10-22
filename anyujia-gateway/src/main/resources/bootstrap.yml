@@ -41,7 +41,7 @@ spring:
         connect-timeout: ${GATEWAY_HTTPCLIENT_CONNECT_TIMEOUT_MS:3000}
         response-timeout: ${GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT:15s}
         pool:
-          # 固定连接池，避免默认 Elastic 池在下游变慢时无限堆积等待请求。
+          # 固定连接池，避免默认 Elastic 池在下游变慢时无限创建连接。
           type: ${GATEWAY_HTTPCLIENT_POOL_TYPE:fixed}
           name: ${GATEWAY_HTTPCLIENT_POOL_NAME:gateway}
           max-connections: ${GATEWAY_HTTPCLIENT_MAX_CONNECTIONS:256}
