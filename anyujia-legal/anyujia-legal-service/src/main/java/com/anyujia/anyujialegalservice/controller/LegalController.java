@@ -81,6 +81,9 @@ public class LegalController implements LegalFeignClient {
     @Qualifier("legalSseConnectionLimiter")
     @Autowired
     private Semaphore sseConnectionLimiter;
+    @Qualifier("legalAgentSubmitLimiter")
+    @Autowired
+    private Semaphore agentSubmitLimiter;
     @Qualifier("legalSseWriterExecutor")
     @Autowired
     private Executor sseWriterExecutor;
@@ -138,10 +141,15 @@ public class LegalController implements LegalFeignClient {
                                                        @RequestHeader("userFrom") String userFrom,
                                                        @RequestBody @Valid LegalAgentTaskSubmitReqDTO request) {
         requireTenant(userType, userFrom);
+        if (!agentSubmitLimiter.tryAcquire()) {
+            sseMetrics.recordSubmitRejected();
+            throw new ServiceException("法律助手入队繁忙，请稍后重试", ResultCode.ERROR.getCode());
+        }
         long started = System.nanoTime();
         try {
             return ApiResult.success(legalAgentTaskService.submit(userId, request));
         } finally {
+            agentSubmitLimiter.release();
             sseMetrics.recordSubmitStage("controller", System.nanoTime() - started);
         }
     }

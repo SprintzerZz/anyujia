@@ -60,4 +60,10 @@ public class LegalAgentMetrics {
                 .publishPercentiles(0.95, 0.99)
                 .register(registry).record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
     }
+
+    public void recordSubmitRejected() {
+        Counter.builder("legal.agent.submit.rejected")
+                .description("Legal Agent enqueue requests rejected by admission control")
+                .register(registry).increment();
+    }
 }

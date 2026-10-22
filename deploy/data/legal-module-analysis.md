@@ -868,6 +868,37 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 - `deploy/perf/results/legal-agent-pool15-2026-10-22.json`
 - `deploy/perf/results/legal-agent-pool20-2026-10-22.json`
 
+### 11.0.17 本轮第十八阶段：入队有界背压验证
+
+针对上一阶段 Hikari 连接池耗尽问题，在 Legal 入队入口增加可配置的 Semaphore admission control：默认最多 10 个请求同时进入同步任务表/Outbox 写入，超出上限立即返回“法律助手入队繁忙，请稍后重试”，并通过 `legal.agent.submit.rejected` 记录拒绝数。该阈值通过 `LEGAL_AGENT_SUBMIT_MAX_IN_FLIGHT` 配置，不改变 Agent 和 SSE 线程池。
+
+#### 背压压测结果
+
+本轮仍使用 500 req/s、30 秒、Gateway 内网链路和连接池 10：
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| HTTP 请求 | 4,813 |
+| HTTP 200 | 1,766 |
+| 背压拒绝 | 3,047 |
+| 实际完成吞吐 | 111.48 req/s |
+| 平均端到端耗时 | 13.26 s |
+| P95 端到端耗时 | 19.64 s |
+| Hikari pending（结束快照） | 0 |
+| Hikari connection timeout | 0 |
+| `legal.agent.submit.rejected` | 3,047 |
+
+#### 结果解释
+
+- 背压已经阻止 Hikari 等待继续放大：本轮连接获取超时为 0，说明数据库保护目标达成。
+- Legal Controller 分段平均约 211ms，task insert、Outbox insert、Service 平均约 44.32ms、23.51ms、68.83ms；端到端 P95 仍为 19.64 秒，主要差值来自 Gateway/压测客户端在高并发下的排队，不能继续归因于 Hikari。
+- 当前拒绝使用统一 `500000` 服务繁忙码，客户端需要按“稍后重试”处理；后续可补充专用 503/限流响应码及 Retry-After。
+- 该方案优先保护实例稳定性，但在单机 500 req/s 目标下有效吞吐下降，不能作为容量提升方案；它是防止雪崩的 P0 安全阀。
+
+下一步对同一版本做 Legal 直连与 Gateway 链路对照压测，分别采集 Legal Controller、Gateway 转发、客户端连接建立耗时，确认剩余长尾是否来自 Gateway 连接池/事件循环排队；之后再决定是否需要 Gateway 限流、连接池配置或协议层改造。
+
+背压压测摘要：`deploy/perf/results/legal-agent-backpressure-2026-10-22.json`。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

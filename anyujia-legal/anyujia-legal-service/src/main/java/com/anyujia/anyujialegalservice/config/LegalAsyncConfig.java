@@ -33,6 +33,8 @@ public class LegalAsyncConfig {
     private int agentMaxPoolSize;
     @Value("${legal.agent.queue-capacity:200}")
     private int agentQueueCapacity;
+    @Value("${legal.agent.submit.max-in-flight:10}")
+    private int submitMaxInFlight;
     @Value("${legal.sse.scheduler-pool-size:4}")
     private int sseSchedulerPoolSize;
     @Value("${legal.sse.max-connections:2000}")
@@ -94,6 +96,11 @@ public class LegalAsyncConfig {
     @Bean(name = "legalSseConnectionLimiter")
     public Semaphore legalSseConnectionLimiter() {
         return new Semaphore(Math.max(1, sseMaxConnections));
+    }
+
+    @Bean(name = "legalAgentSubmitLimiter")
+    public Semaphore legalAgentSubmitLimiter() {
+        return new Semaphore(Math.max(1, submitMaxInFlight));
     }
 
     @Bean(name = "legalSseWriterExecutor")
