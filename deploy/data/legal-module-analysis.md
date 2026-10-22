@@ -839,7 +839,7 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 
 结论：当前 P0 主瓶颈已从“可能的 Controller/容器排队”收敛为“同步入队链路受 Hikari 连接池耗尽影响”。下一阶段应优先做数据库写入背压/连接获取策略和任务入队链路解耦验证，再比较连接池 10、15、20 的有效吞吐、超时率和 P95；不能仅扩大业务线程池。
 
-原始压测结果：`deploy/perf/results/legal-agent-resource-sampled-2026-10-22.json`。
+压测摘要：`deploy/perf/results/legal-agent-resource-sampled-2026-10-22-summary.json`。逐请求原始采样已清理，避免将约 20 MB 的临时明细纳入仓库。
 
 ## 12. 参考文件
 
