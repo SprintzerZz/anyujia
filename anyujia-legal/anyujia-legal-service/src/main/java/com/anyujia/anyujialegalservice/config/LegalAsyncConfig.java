@@ -10,10 +10,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Slf4j
 @Configuration
 public class LegalAsyncConfig {
+    @Autowired
+    private MeterRegistry meterRegistry;
     @Value("${legal.async.core-pool-size:2}")
     private int corePoolSize;
     @Value("${legal.async.max-pool-size:4}")
@@ -49,6 +54,7 @@ public class LegalAsyncConfig {
         executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
+        registerExecutorMetrics("assessment", executor);
         log.info("Legal assessment executor configured: core={}, max={}, queue={}",
                 corePoolSize, maxPoolSize, queueCapacity);
         return executor;
@@ -65,6 +71,7 @@ public class LegalAsyncConfig {
         executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
+        registerExecutorMetrics("agent", executor);
         log.info("Legal Agent executor configured: core={}, max={}, queue={}",
                 agentCorePoolSize, agentMaxPoolSize, agentQueueCapacity);
         return executor;
@@ -100,8 +107,21 @@ public class LegalAsyncConfig {
         executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
+        registerExecutorMetrics("sse-writer", executor);
         log.info("Legal SSE writer executor configured: core={}, max={}, queue={}",
                 sseWriterCorePoolSize, sseWriterMaxPoolSize, sseWriterQueueCapacity);
         return executor;
+    }
+
+    private void registerExecutorMetrics(String name, ThreadPoolTaskExecutor executor) {
+        ThreadPoolExecutor pool = executor.getThreadPoolExecutor();
+        Gauge.builder("legal.executor.active", pool, ThreadPoolExecutor::getActiveCount)
+                .tag("executor", name).register(meterRegistry);
+        Gauge.builder("legal.executor.pool.size", pool, ThreadPoolExecutor::getPoolSize)
+                .tag("executor", name).register(meterRegistry);
+        Gauge.builder("legal.executor.queue.size", pool, value -> value.getQueue().size())
+                .tag("executor", name).register(meterRegistry);
+        Gauge.builder("legal.executor.queue.remaining", pool, value -> value.getQueue().remainingCapacity())
+                .tag("executor", name).register(meterRegistry);
     }
 }
