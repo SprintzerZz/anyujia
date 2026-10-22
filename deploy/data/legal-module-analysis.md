@@ -1198,6 +1198,45 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 
 下一步使用 300 req/s 实时采样复测，重点比较 `gateway.forward.rejected`、连接池 pending、`gateway.forward.active`、P95/P99 和容器资源峰值。
 
+### 11.0.31 本轮第三十二阶段：Gateway 硬并发闸门 300 req/s 复测
+
+使用最新 Gateway JAR，开启 `GATEWAY_FORWARD_MAX_IN_FLIGHT=256`，通过真实 Gateway → Legal 链路执行 300 req/s、持续 30 秒的压测，并同步采样 Actuator 与 Docker 资源指标。
+
+#### 复测结果
+
+| 指标 | 有界连接池复测 | 增加硬并发闸门后 |
+| --- | ---: | ---: |
+| 实际 HTTP 请求吞吐 | 241.24 req/s | 280.83 req/s |
+| HTTP 失败率 | 56.08% | 52.42% |
+| HTTP 失败请求数 | — | 4,491 |
+| 入队平均耗时 | 3.18 s | 1.27 s |
+| 入队 P95/P99 | 6.95 s / 8.52 s | 4.21 s / 5.99 s |
+| Gateway 转发 active 峰值 | 508 | 256 |
+| 连接池 pending 采样峰值 | 311 | 4 |
+| Gateway CPU 采样峰值 | 345.48% | 311.98% |
+| Gateway 内存采样峰值 | 612.4 MiB | 683.5 MiB |
+| Legal CPU 采样峰值 | 323.46% | 338.45% |
+| Legal 内存采样峰值 | 722.5 MiB | 948.8 MiB |
+
+Actuator 最终指标：
+
+- `gateway.forward.rejected`：4,449 次，说明大部分失败请求在 Gateway 闸门处被提前拒绝，没有继续堆积到下游连接池。
+- `gateway.forward.permits.available`：256，说明请求完成、异常和取消路径均释放了许可，没有发生许可泄漏。
+- `reactor.netty.connection.provider.pending.connections`：0，压测结束后连接池等待队列已排空。
+- `gateway.forward`：4,118 次完成转发，累计耗时 6,936.07 秒，最大单次转发耗时 7.28 秒。
+
+#### 结论与下一步
+
+- 硬闸门已生效：`gateway.forward.active` 被限制在 256，pending 从上一轮采样的 311 降到 4，Gateway 不再无限制接收下游转发等待请求。
+- 入队平均耗时从 3.18 秒降至 1.27 秒，P95 从 6.95 秒降至 4.21 秒，说明快速拒绝有效降低了排队放大效应。
+- 该轮仍属于过载保护验证，不是容量达标测试：HTTP 失败率仍为 52.42%，K6 的“失败数必须为 0”阈值按预期失败。失败主要体现为闸门拒绝，不能解读为 Legal 服务自身全部不可用。
+- 下一阶段按 SLO 选择闸门值，至少执行 200/250/300 req/s 阶梯测试，并分别统计 503 闸门拒绝、连接池超时、Legal 业务错误和客户端超时，形成可用于容量规划的安全上限。
+
+本轮原始结果：
+
+- `deploy/perf/results/legal-agent-gateway-gate-pool-300-2026-10-23.json`
+- `deploy/perf/results/legal-agent-gateway-gate-resource-300-2026-10-23.json`
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
