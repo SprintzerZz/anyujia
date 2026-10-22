@@ -111,8 +111,9 @@ public class LegalAgentTaskService {
             String answerJson = objectMapper.writeValueAsString(answer);
             task.setContextHash(answer.getContextHash());
             task.setContextStatus(answer.getContextStatus());
+            task.setContextConflict(answer.isContextConflict());
             if (taskMapper.complete(taskId, workerId, answerJson,
-                    answer.getContextHash(), answer.getContextStatus()) > 0) {
+                    answer.getContextHash(), answer.getContextStatus(), answer.isContextConflict()) > 0) {
                 try {
                     eventService.append(taskId, task.getTenantId(), "result", answerJson);
                 } catch (Exception eventError) {
@@ -167,6 +168,7 @@ public class LegalAgentTaskService {
                 result.setDegraded(answer.isDegraded());
                 result.setContextHash(answer.getContextHash());
                 result.setContextStatus(answer.getContextStatus());
+                result.setContextConflict(answer.isContextConflict());
             } catch (JsonProcessingException ex) {
                 result.setStatus(FAILED);
                 result.setErrorMessage("任务结果解析失败");

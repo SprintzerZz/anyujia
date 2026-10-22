@@ -25,6 +25,7 @@ public class LegalAgentTask {
     private String answerJson;
     private String contextHash;
     private String contextStatus;
+    private Boolean contextConflict;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

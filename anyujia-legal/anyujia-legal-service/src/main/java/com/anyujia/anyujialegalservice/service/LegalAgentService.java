@@ -62,6 +62,10 @@ public class LegalAgentService {
                 ? LocalDate.now() : LocalDate.parse(request.getAsOfDate());
         List<LawPassage> passages = knowledgeRetriever.retrieve(request.getQuery(), regionCode, asOfDate, 5);
         LegalAnswerGeneration generation = answerGenerator.generateGrounded(request.getQuery(), passages, grounding);
+        LegalAgentContextVersionService.ContextVersion finalContextVersion = contextVersionService.recordVersion(
+                tenantId, binding.getChatConversationId(), groundingContext(
+                        tenantId, binding, contract, request.getQuery()));
+        boolean contextConflict = !contextVersion.hash().equals(finalContextVersion.hash());
 
         memoryService.appendTurn(tenantId, request.getChatConversationId(), "user", request.getQuery());
         memoryService.appendTurn(tenantId, request.getChatConversationId(), "assistant", generation.answer());
@@ -73,7 +77,8 @@ public class LegalAgentService {
         vo.setMode(generation.mode());
         vo.setDegraded(generation.degraded());
         vo.setContextHash(contextVersion.hash());
-        vo.setContextStatus(contextVersion.status().name());
+        vo.setContextStatus(contextConflict ? "STALE_CONTEXT" : contextVersion.status().name());
+        vo.setContextConflict(contextConflict);
         return vo;
     }
 

@@ -17,6 +17,7 @@ public class LegalAgentTaskVO {
     private boolean degraded;
     private String contextHash;
     private String contextStatus;
+    private boolean contextConflict;
     private String errorMessage;
     private Long createdAt;
     private Long completedAt;

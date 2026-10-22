@@ -11,4 +11,5 @@ public class LegalAgentAnswerVO {
     private boolean degraded;
     private String contextHash;
     private String contextStatus;
+    private boolean contextConflict;
 }
