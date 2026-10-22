@@ -1237,6 +1237,25 @@ Actuator 最终指标：
 - `deploy/perf/results/legal-agent-gateway-gate-pool-300-2026-10-23.json`
 - `deploy/perf/results/legal-agent-gateway-gate-resource-300-2026-10-23.json`
 
+### 11.0.32 本轮第三十三阶段：固化 200/250/300 req/s 阶梯容量验证
+
+为避免手工命令导致环境变量、测试时长和输出文件不一致，新增 `deploy/perf/legal-gateway-staircase.ps1`，统一执行 200、250、300 req/s 三档测试：
+
+- 每档默认持续 30 秒，可通过 `-Duration` 调整。
+- 使用 `legal-agent-load.js` 的 `enqueue` 场景，只测入队链路，不把 SSE 长连接混入吞吐结论。
+- 每档独立生成 k6 summary JSON，保留实际吞吐、HTTP 错误率、dropped iterations、入队 P95/P99。
+- Token 只通过 `-Token` 或 `LEGAL_PERF_TOKEN` 注入，不写入脚本和报告。
+- `-BaseUrl`、Docker 网络和档位均可覆盖，便于复用 Gateway 直连或其他测试环境。
+
+本阶段执行状态：脚本已完成，但本机 Docker Desktop 当前未恢复，200/250/300 req/s 实际压测尚未启动；因此本阶段不虚构容量数据。Docker 服务恢复后执行：
+
+```powershell
+$env:LEGAL_PERF_TOKEN = '<临时租户 Token>'
+pwsh -File deploy/perf/legal-gateway-staircase.ps1
+```
+
+执行后需将三档结果与 `gateway.forward.rejected`、`pending.connections`、`gateway.forward.active` 及资源采样合并，才能确定最终安全并发闸门。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
