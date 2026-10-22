@@ -27,6 +27,11 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:anyujiadev}
     password: ${MYSQL_PASSWORD:change-me}
+    hikari:
+      maximum-pool-size: ${LEGAL_DB_MAX_POOL_SIZE:10}
+      minimum-idle: ${LEGAL_DB_MIN_IDLE:5}
+      connection-timeout: ${LEGAL_DB_CONNECTION_TIMEOUT_MILLIS:3000}
+      validation-timeout: ${LEGAL_DB_VALIDATION_TIMEOUT_MILLIS:1000}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

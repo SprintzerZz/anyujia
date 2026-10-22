@@ -41,10 +41,6 @@ public class LegalAgentTaskService {
 
     @Transactional(rollbackFor = Exception.class)
     public LegalAgentTaskVO submit(Long tenantId, LegalAgentTaskSubmitReqDTO request) {
-        LegalAgentTask existing = findByRequestId(tenantId, request.getRequestId());
-        if (existing != null) {
-            return toVO(existing);
-        }
         LegalAgentTask task = new LegalAgentTask();
         task.setRequestId(request.getRequestId());
         task.setTenantId(tenantId);
@@ -61,7 +57,11 @@ public class LegalAgentTaskService {
         try {
             taskMapper.insert(task);
         } catch (DuplicateKeyException ex) {
-            return toVO(findByRequestId(tenantId, request.getRequestId()));
+            LegalAgentTask existing = findByRequestId(tenantId, request.getRequestId());
+            if (existing != null) {
+                return toVO(existing);
+            }
+            throw ex;
         }
         LegalAgentTaskOutbox outbox = new LegalAgentTaskOutbox();
         outbox.setTaskId(task.getId());
