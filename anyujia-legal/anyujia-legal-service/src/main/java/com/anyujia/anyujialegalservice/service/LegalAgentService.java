@@ -35,6 +35,7 @@ public class LegalAgentService {
     private final LegalKnowledgeRetriever knowledgeRetriever;
     private final LegalAnswerGenerator answerGenerator;
     private final LegalContractContextCompressor contractContextCompressor;
+    private final LegalChatContextCompressor chatContextCompressor;
     private final LegalAgentMemoryService memoryService;
     private final LegalAiProperties properties;
     private final ChatFeignClient chatFeignClient;
@@ -102,9 +103,7 @@ public class LegalAgentService {
                 .append('\n');
         result.append("[landlord_messages]\n");
         List<MessageVO> messages = chatEvidenceProvider.recentMessages(tenantId, binding.getLandlordConversationId(), 100);
-        messages.stream().filter(message -> message.getFromId() != null && !message.getFromId().equals(tenantId))
-                .limit(100).forEach(message -> result.append(message.getMessageId()).append(": ")
-                        .append(message.getContent() == null ? "" : message.getContent()).append('\n'));
+        result.append(chatContextCompressor.build(tenantId, messages, query)).append('\n');
         result.append("[rental_product]\n");
         productEvidenceProvider.snapshot(tenantId, binding.getLandlordConversationId()).ifPresent(product -> {
             result.append("depositMonths=").append(product.getDepositMonths()).append('\n');
