@@ -80,6 +80,7 @@ legal:
       processing-timeout-millis: ${LEGAL_AGENT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}
     events:
       stream-key: ${LEGAL_AGENT_EVENTS_STREAM_KEY:legal:agent:events}
+      compensation-delay-millis: ${LEGAL_AGENT_EVENTS_COMPENSATION_DELAY_MILLIS:5000}
   trace:
     archive-enabled: ${LEGAL_TRACE_ARCHIVE_ENABLED:true}
     retention-days: ${LEGAL_TRACE_RETENTION_DAYS:90}

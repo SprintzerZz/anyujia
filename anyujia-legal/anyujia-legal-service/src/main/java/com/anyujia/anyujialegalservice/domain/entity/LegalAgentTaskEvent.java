@@ -15,5 +15,6 @@ public class LegalAgentTaskEvent {
     private Long tenantId;
     private String eventType;
     private String payload;
+    private Integer redisPublished;
     private LocalDateTime createdAt;
 }

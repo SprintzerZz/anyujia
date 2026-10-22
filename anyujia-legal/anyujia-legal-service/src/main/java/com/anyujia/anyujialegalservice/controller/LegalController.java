@@ -17,6 +17,7 @@ import com.anyujia.anyujialegalservice.service.LegalAgentConversationService;
 import com.anyujia.anyujialegalservice.service.LegalAgentService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskEventService;
+import com.anyujia.anyujialegalservice.service.LegalAgentEventSubscriptionService;
 import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTaskEvent;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
@@ -69,6 +70,7 @@ public class LegalController implements LegalFeignClient {
     private final LegalAgentConversationService legalAgentConversationService;
     private final LegalAgentTaskService legalAgentTaskService;
     private final LegalAgentTaskEventService legalAgentTaskEventService;
+    private final LegalAgentEventSubscriptionService legalAgentEventSubscriptionService;
     @Qualifier("legalSseScheduler")
     @Autowired
     private ScheduledExecutorService sseScheduler;
@@ -152,14 +154,24 @@ public class LegalController implements LegalFeignClient {
         }
         SseEmitter emitter = new SseEmitter(120_000L);
         AtomicBoolean released = new AtomicBoolean();
-        AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+        AtomicReference<ScheduledFuture<?>> heartbeatRef = new AtomicReference<>();
+        AtomicReference<AutoCloseable> subscriptionRef = new AtomicReference<>();
         AtomicLong cursor = new AtomicLong(lastEventId == null ? 0L : lastEventId);
-        AtomicLong tick = new AtomicLong();
+        AtomicBoolean flushScheduled = new AtomicBoolean();
+        AtomicBoolean dirty = new AtomicBoolean(true);
         Runnable cleanup = () -> {
             if (released.compareAndSet(false, true)) {
-                ScheduledFuture<?> future = futureRef.get();
-                if (future != null) {
-                    future.cancel(false);
+                ScheduledFuture<?> heartbeat = heartbeatRef.get();
+                if (heartbeat != null) {
+                    heartbeat.cancel(false);
+                }
+                AutoCloseable subscription = subscriptionRef.get();
+                if (subscription != null) {
+                    try {
+                        subscription.close();
+                    } catch (Exception ignored) {
+                        // cleanup must remain idempotent even if Redis subscription is already closed
+                    }
                 }
                 sseConnectionLimiter.release();
             }
@@ -170,8 +182,13 @@ public class LegalController implements LegalFeignClient {
             emitter.complete();
         });
         emitter.onError(ex -> cleanup.run());
-        ScheduledFuture<?> future = sseScheduler.scheduleWithFixedDelay(() -> {
+        AtomicReference<Runnable> scheduleFlushRef = new AtomicReference<>();
+        Runnable flush = () -> {
             try {
+                if (released.get()) {
+                    return;
+                }
+                dirty.set(false);
                 var events = legalAgentTaskEventService.after(userId, taskId, cursor.get(), 50);
                 for (LegalAgentTaskEvent event : events) {
                     emitter.send(SseEmitter.event().id(String.valueOf(event.getId()))
@@ -183,15 +200,38 @@ public class LegalController implements LegalFeignClient {
                         return;
                     }
                 }
-                if (tick.incrementAndGet() % 30 == 0) {
-                    emitter.send(SseEmitter.event().name("heartbeat").data("ok"));
+                if (events.size() >= 50) {
+                    dirty.set(true);
                 }
             } catch (RuntimeException | java.io.IOException ex) {
                 cleanup.run();
                 emitter.completeWithError(ex);
+            } finally {
+                flushScheduled.set(false);
+                if (dirty.get() && !released.get()) {
+                    scheduleFlushRef.get().run();
+                }
             }
-        }, 0L, 500L, TimeUnit.MILLISECONDS);
-        futureRef.set(future);
+        };
+        Runnable scheduleFlush = () -> {
+            dirty.set(true);
+            if (flushScheduled.compareAndSet(false, true)) {
+                sseScheduler.execute(flush);
+            }
+        };
+        scheduleFlushRef.set(scheduleFlush);
+        subscriptionRef.set(legalAgentEventSubscriptionService.subscribe(taskId, scheduleFlush));
+        scheduleFlush.run();
+        heartbeatRef.set(sseScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                if (!released.get()) {
+                    emitter.send(SseEmitter.event().name("heartbeat").data("ok"));
+                }
+            } catch (java.io.IOException ex) {
+                cleanup.run();
+                emitter.completeWithError(ex);
+            }
+        }, 15L, 15L, TimeUnit.SECONDS));
         return emitter;
     }
 

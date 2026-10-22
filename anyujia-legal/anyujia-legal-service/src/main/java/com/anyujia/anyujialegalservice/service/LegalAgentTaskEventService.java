@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class LegalAgentTaskEventService {
     private final LegalAgentTaskEventMapper eventMapper;
     private final StringRedisTemplate redisTemplate;
+    private final LegalAgentMetrics metrics;
     @Value("${legal.agent.events.stream-key:legal:agent:events}")
     private String streamKey;
 
@@ -28,22 +29,23 @@ public class LegalAgentTaskEventService {
         event.setTenantId(tenantId);
         event.setEventType(eventType);
         event.setPayload(payload);
+        event.setRedisPublished(0);
         event.setCreatedAt(LocalDateTime.now());
         eventMapper.insert(event);
-        try {
-            MapRecord<String, String, String> record = StreamRecords.newRecord()
-                    .ofMap(java.util.Map.of(
-                            "eventId", String.valueOf(event.getId()),
-                            "taskId", String.valueOf(taskId),
-                            "tenantId", String.valueOf(tenantId),
-                            "eventType", eventType))
-                    .withStreamKey(streamKey);
-            redisTemplate.opsForStream().add(record);
-        } catch (Exception ex) {
-            // MySQL is the replay source of truth; Redis is only the cross-instance wake-up path.
-            log.warn("Legal Agent event published to Redis Stream failed, eventId={}", event.getId(), ex);
-        }
+        publish(event);
         return event;
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${legal.agent.events.compensation-delay-millis:5000}")
+    public void compensateUnpublishedEvents() {
+        List<LegalAgentTaskEvent> events = eventMapper.selectList(new LambdaQueryWrapper<LegalAgentTaskEvent>()
+                .eq(LegalAgentTaskEvent::getRedisPublished, 0)
+                .orderByAsc(LegalAgentTaskEvent::getId)
+                .last("LIMIT 100"));
+        events.forEach(this::publish);
+        if (!events.isEmpty()) {
+            metrics.recordCompensation(events.size());
+        }
     }
 
     public List<LegalAgentTaskEvent> after(Long tenantId, Long taskId, Long lastEventId, int limit) {
@@ -54,5 +56,25 @@ public class LegalAgentTaskEventService {
                         lastEventId == null ? 0L : lastEventId)
                 .orderByAsc(LegalAgentTaskEvent::getId)
                 .last("LIMIT " + Math.max(1, Math.min(limit, 100))));
+    }
+
+    private void publish(LegalAgentTaskEvent event) {
+        try {
+            MapRecord<String, String, String> record = StreamRecords.newRecord()
+                    .ofMap(java.util.Map.of(
+                            "eventId", String.valueOf(event.getId()),
+                            "taskId", String.valueOf(event.getTaskId()),
+                            "tenantId", String.valueOf(event.getTenantId()),
+                            "eventType", event.getEventType()))
+                    .withStreamKey(streamKey);
+            redisTemplate.opsForStream().add(record);
+            event.setRedisPublished(1);
+            eventMapper.updateById(event);
+            metrics.recordPublished();
+        } catch (Exception ex) {
+            // MySQL is the replay source of truth; Redis is only the cross-instance wake-up path.
+            metrics.recordPublishFailure();
+            log.warn("Legal Agent event published to Redis Stream failed, eventId={}", event.getId(), ex);
+        }
     }
 }
