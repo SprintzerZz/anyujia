@@ -1154,6 +1154,38 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 - 使用最新 JAR 启动临时 Gateway 容器成功，`/actuator/health` 返回 HTTP 200。
 - 下一步必须重新执行 300 req/s 实时采样压测，检查 `pending.connections` 是否被限制在 256 以内，并记录快速失败比例、Gateway forward P95/P99、CPU 和内存变化。
 
+### 11.0.29 本轮第三十阶段：有界 pending 队列 300 req/s 复测
+
+使用新增 `BoundedGatewayHttpClientConfig`、实时资源采样器和真实 Gateway → Legal 链路，重新执行 300 req/s、持续 30 秒的入队压测。
+
+#### 复测结果
+
+| 指标 | 上一轮默认 fixed pool | 本轮有界 ConnectionProvider |
+| --- | ---: | ---: |
+| 实际吞吐 | 233.50 req/s | 241.24 req/s |
+| HTTP 失败率 | 64.15% | 56.08% |
+| 入队平均耗时 | 3.16 s | 3.18 s |
+| 入队 P95/P99 | 6.44 s / 10.22 s | 6.95 s / 8.52 s |
+| 连接池 active 峰值 | 256 | 256 |
+| 连接池 pending 采样峰值 | 378 | 311 |
+| `gateway.forward.active` 采样峰值 | 669 | 508 |
+| Gateway CPU 采样峰值 | 500.91% | 345.48% |
+| Gateway 内存采样峰值 | 797.9 MiB | 612.4 MiB |
+| Legal CPU 采样峰值 | 381.04% | 323.46% |
+| Legal 内存采样峰值 | 895.2 MiB | 722.5 MiB |
+
+#### 结论
+
+- 有界连接池配置带来明显改善：实际吞吐提升约 3.3%，HTTP 失败率下降约 8.1 个百分点，`gateway.forward.active`、Gateway CPU/内存和 Legal CPU/内存均下降。
+- Gateway 日志已确认连接获取超时快速失败，异常为 `PoolAcquireTimeoutException`，说明 `acquire-timeout=1000ms` 已生效。
+- Actuator `pending.connections` 仍采样到 311，未严格小于配置的 256；该指标可能包含 Reactor Pool 内部不同阶段的等待计数，不能单独作为 `pendingAcquireMaxCount` 硬上限的证明。
+- 入队 P95 仍在 6.95 秒，当前链路还不能满足 200 ms 入队目标；下一步增加 Gateway 转发层显式并发信号量，使用 `tryAcquire` 作为硬闸门，并补充配置绑定日志/单元测试验证实际 pending 上限。
+
+复测原始结果：
+
+- `deploy/perf/results/legal-agent-gateway-bounded-resource-300-2026-10-23.json`
+- `deploy/perf/results/legal-agent-gateway-bounded-pool-300-2026-10-23.json`
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

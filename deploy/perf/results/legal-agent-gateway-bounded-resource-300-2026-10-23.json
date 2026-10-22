@@ -1,0 +1,57 @@
+[
+  {
+    "timestamp": "2026-10-22T23:53:15.6559515+08:00",
+    "elapsedSeconds": 0.015,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 1.98,
+    "gatewayMemory": "449.9MiB",
+    "legalCpuPercent": 2.25,
+    "legalMemory": "576.4MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:53:20.9578112+08:00",
+    "elapsedSeconds": 5.316,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 1.12,
+    "gatewayMemory": "450.9MiB",
+    "legalCpuPercent": 3.29,
+    "legalMemory": "575.7MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:53:26.2237560+08:00",
+    "elapsedSeconds": 10.582,
+    "connectionPoolActive": null,
+    "connectionPoolPending": null,
+    "gatewayForwardActive": 0.0,
+    "gatewayCpuPercent": 1.19,
+    "gatewayMemory": "451.5MiB",
+    "legalCpuPercent": 0.97,
+    "legalMemory": "576.6MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:53:30.8341420+08:00",
+    "elapsedSeconds": 15.193,
+    "connectionPoolActive": 256.0,
+    "connectionPoolPending": 287.0,
+    "gatewayForwardActive": 466.0,
+    "gatewayCpuPercent": 236.53,
+    "gatewayMemory": "487.2MiB",
+    "legalCpuPercent": 285.61,
+    "legalMemory": "634.4MiB"
+  },
+  {
+    "timestamp": "2026-10-22T23:53:38.3976962+08:00",
+    "elapsedSeconds": 22.756,
+    "connectionPoolActive": 227.0,
+    "connectionPoolPending": 311.0,
+    "gatewayForwardActive": 508.0,
+    "gatewayCpuPercent": 345.48,
+    "gatewayMemory": "612.4MiB",
+    "legalCpuPercent": 323.46,
+    "legalMemory": "722.5MiB"
+  }
+]
