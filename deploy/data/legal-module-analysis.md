@@ -941,6 +941,35 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 
 下一步使用该版本重新跑 Gateway → Legal 的阶梯压测，并同步采集 `gateway.auth.redis`、`gateway.auth.total`、`gateway.forward`、`gateway.forward.active`、HTTP Client metrics、CPU 和连接数，确定 Gateway 的饱和点和长尾来源。
 
+### 11.0.20 本轮第二十一阶段：Gateway 转发阶梯压测
+
+使用新增 `gateway.forward` 观测的 Gateway JAR，固定 Legal 连接池 10、入队背压 10、有效 Token 和 Gateway 内网链路，执行 100/200/300 req/s、每档 20 秒的阶梯压测。
+
+#### 阶梯结果
+
+| 目标速率 | 实际请求吞吐 | HTTP 200 | HTTP 失败 | 端到端平均 | 端到端 P95 | 端到端 P99 | Gateway forward 平均 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 req/s | 91.02 req/s | 1,511 | 489 | 274.94 ms | 943.73 ms | 1.23 s | 约 190 ms |
+| 200 req/s | 183.63 req/s | 2,255 | 1,746 | 193.94 ms | 787.52 ms | 1.18 s | 约 156 ms |
+| 300 req/s | 288.84 req/s | 3,442 | 2,384 | 569.20 ms | 2.49 s | 3.71 s | 约 535 ms |
+
+累计 Gateway `forward{route=legal-agent}` Timer：P95 2.08 s、P99 3.62 s、最大 4.47 s；Gateway `auth.redis` 和 `auth.total` 平均维持在约 5–10ms，未随阶梯明显增长。
+
+#### 结论
+
+- Redis 鉴权不是本轮瓶颈，认证耗时稳定且量级较低。
+- 300 req/s 档开始出现明显的 Gateway 下游转发长尾，`gateway.forward` 平均耗时从约 156–190ms 上升到约 535ms，P95 达到秒级。
+- 由于 Legal 背压主动拒绝部分请求，HTTP 失败率不能直接等同于 Gateway 单独失败率；但转发 Timer 已证明 Gateway 等待下游响应的时间在高档位显著上升。
+- 当前开发机可观测到 Gateway 的饱和拐点约在 200–300 req/s 区间，不能将其作为生产容量承诺。
+
+下一步继续采集 Gateway HTTP Client 的连接池/事件循环和容器 CPU、文件描述符，验证 300 req/s 档是连接池上限、事件循环阻塞还是宿主机资源争用；确认后再调整 Gateway 连接池与限流参数。
+
+阶梯压测摘要：
+
+- `deploy/perf/results/legal-agent-gateway-step-100-2026-10-22.json`
+- `deploy/perf/results/legal-agent-gateway-step-200-2026-10-22.json`
+- `deploy/perf/results/legal-agent-gateway-step-300-2026-10-22.json`
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
