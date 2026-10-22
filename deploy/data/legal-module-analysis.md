@@ -1136,6 +1136,24 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 - `deploy/perf/results/legal-agent-gateway-resource-300-2026-10-23.json`
 - `deploy/perf/results/legal-agent-gateway-pool-300-sampled-2026-10-23.json`
 
+### 11.0.28 本轮第二十九阶段：实现 Gateway 有界 pending acquire 队列
+
+针对上一阶段确认的 `pending.connections=378`，新增 `BoundedGatewayHttpClientConfig`，继承 Spring Cloud Gateway 官方 `HttpClientFactory`，仅覆盖 `ConnectionProvider` 构造逻辑，保留官方 SSL、代理、压缩、响应解码和 `HttpClientCustomizer` 链路。
+
+本阶段新增配置：
+
+- `spring.cloud.gateway.httpclient.pool.pending-acquire-max-count`，默认 256。
+- 环境变量 `GATEWAY_HTTPCLIENT_PENDING_ACQUIRE_MAX_COUNT` 可覆盖上限。
+- `max-connections` 默认 256，pending 队列默认 256，形成有限的下游连接等待容量。
+- 超过 pending 上限的请求不再继续占用 Gateway 内存等待，而是由 Reactor Netty 快速失败，交由上层限流、重试或降级策略处理。
+
+#### 本阶段验证
+
+- Gateway 全量构建成功。
+- `AuthFilterTest`：1 个测试通过。
+- 使用最新 JAR 启动临时 Gateway 容器成功，`/actuator/health` 返回 HTTP 200。
+- 下一步必须重新执行 300 req/s 实时采样压测，检查 `pending.connections` 是否被限制在 256 以内，并记录快速失败比例、Gateway forward P95/P99、CPU 和内存变化。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

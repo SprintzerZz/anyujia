@@ -45,6 +45,7 @@ spring:
           type: ${GATEWAY_HTTPCLIENT_POOL_TYPE:fixed}
           name: ${GATEWAY_HTTPCLIENT_POOL_NAME:gateway}
           max-connections: ${GATEWAY_HTTPCLIENT_MAX_CONNECTIONS:256}
+          pending-acquire-max-count: ${GATEWAY_HTTPCLIENT_PENDING_ACQUIRE_MAX_COUNT:256}
           acquire-timeout: ${GATEWAY_HTTPCLIENT_ACQUIRE_TIMEOUT_MS:1000}
           max-idle-time: ${GATEWAY_HTTPCLIENT_MAX_IDLE_TIME:30s}
           max-life-time: ${GATEWAY_HTTPCLIENT_MAX_LIFE_TIME:5m}
