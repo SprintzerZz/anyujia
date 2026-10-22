@@ -16,6 +16,8 @@ import com.anyujia.anyujialegalservice.service.LegalAnswerService;
 import com.anyujia.anyujialegalservice.service.LegalAgentConversationService;
 import com.anyujia.anyujialegalservice.service.LegalAgentService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskService;
+import com.anyujia.anyujialegalservice.service.LegalAgentTaskEventService;
+import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTaskEvent;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
@@ -38,6 +40,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.anyujia.anyujialegalapi.domain.dto.LegalSourceIngestReqDTO;
@@ -65,6 +68,7 @@ public class LegalController implements LegalFeignClient {
     private final LegalAgentService legalAgentService;
     private final LegalAgentConversationService legalAgentConversationService;
     private final LegalAgentTaskService legalAgentTaskService;
+    private final LegalAgentTaskEventService legalAgentTaskEventService;
     @Qualifier("legalSseScheduler")
     @Autowired
     private ScheduledExecutorService sseScheduler;
@@ -133,6 +137,62 @@ public class LegalController implements LegalFeignClient {
                                                     @PathVariable("taskId") Long taskId) {
         requireTenant(userType, userFrom);
         return ApiResult.success(legalAgentTaskService.get(userId, taskId));
+    }
+
+    @GetMapping(value = "/agent/tasks/{taskId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamAgentTask(@RequestHeader("userId") Long userId,
+                                      @RequestHeader("userType") Integer userType,
+                                      @RequestHeader("userFrom") String userFrom,
+                                      @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,
+                                      @PathVariable("taskId") Long taskId) {
+        requireTenant(userType, userFrom);
+        legalAgentTaskService.get(userId, taskId);
+        if (!sseConnectionLimiter.tryAcquire()) {
+            throw new ServiceException("法律助手实时连接数已达上限，请稍后重试", ResultCode.ERROR.getCode());
+        }
+        SseEmitter emitter = new SseEmitter(120_000L);
+        AtomicBoolean released = new AtomicBoolean();
+        AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+        AtomicLong cursor = new AtomicLong(lastEventId == null ? 0L : lastEventId);
+        AtomicLong tick = new AtomicLong();
+        Runnable cleanup = () -> {
+            if (released.compareAndSet(false, true)) {
+                ScheduledFuture<?> future = futureRef.get();
+                if (future != null) {
+                    future.cancel(false);
+                }
+                sseConnectionLimiter.release();
+            }
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(() -> {
+            cleanup.run();
+            emitter.complete();
+        });
+        emitter.onError(ex -> cleanup.run());
+        ScheduledFuture<?> future = sseScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                var events = legalAgentTaskEventService.after(userId, taskId, cursor.get(), 50);
+                for (LegalAgentTaskEvent event : events) {
+                    emitter.send(SseEmitter.event().id(String.valueOf(event.getId()))
+                            .name(event.getEventType()).data(event.getPayload()));
+                    cursor.set(event.getId());
+                    if ("result".equals(event.getEventType()) || "failed".equals(event.getEventType())) {
+                        cleanup.run();
+                        emitter.complete();
+                        return;
+                    }
+                }
+                if (tick.incrementAndGet() % 30 == 0) {
+                    emitter.send(SseEmitter.event().name("heartbeat").data("ok"));
+                }
+            } catch (RuntimeException | java.io.IOException ex) {
+                cleanup.run();
+                emitter.completeWithError(ex);
+            }
+        }, 0L, 500L, TimeUnit.MILLISECONDS);
+        futureRef.set(future);
+        return emitter;
     }
 
     private void scheduleAssessmentStream(SseEmitter emitter, Long userId, Long jobId) {

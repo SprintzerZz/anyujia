@@ -37,6 +37,7 @@ public class LegalAgentTaskService {
     private final LegalAgentService agentService;
     private final ObjectMapper objectMapper;
     private final LegalAgentTaskOutboxMapper outboxMapper;
+    private final LegalAgentTaskEventService eventService;
 
     @Transactional(rollbackFor = Exception.class)
     public LegalAgentTaskVO submit(Long tenantId, LegalAgentTaskSubmitReqDTO request) {
@@ -99,10 +100,26 @@ public class LegalAgentTaskService {
             request.setRegionCode(task.getRegionCode());
             request.setAsOfDate(task.getAsOfDate().toString());
             LegalAgentAnswerVO answer = agentService.answer(task.getTenantId(), request);
-            taskMapper.complete(taskId, workerId, objectMapper.writeValueAsString(answer));
+            String answerJson = objectMapper.writeValueAsString(answer);
+            if (taskMapper.complete(taskId, workerId, answerJson) > 0) {
+                try {
+                    eventService.append(taskId, task.getTenantId(), "result", answerJson);
+                } catch (Exception eventError) {
+                    // 任务状态已经完成，事件发布失败不能反向把任务改成 FAILED；后续可由事件补偿任务处理。
+                    log.error("Legal Agent result event append failed, taskId={}", taskId, eventError);
+                }
+            }
         } catch (Exception ex) {
             log.error("Legal Agent task failed, taskId={}", taskId, ex);
-            taskMapper.fail(taskId, workerId, boundedError(ex));
+            String error = boundedError(ex);
+            if (taskMapper.fail(taskId, workerId, error) > 0) {
+                try {
+                    eventService.append(taskId, task.getTenantId(), "failed",
+                            objectMapper.writeValueAsString(java.util.Map.of("errorMessage", error)));
+                } catch (Exception eventError) {
+                    log.error("Legal Agent failure event append failed, taskId={}", taskId, eventError);
+                }
+            }
         }
     }
 

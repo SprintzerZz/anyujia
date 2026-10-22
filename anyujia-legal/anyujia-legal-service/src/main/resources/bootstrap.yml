@@ -78,6 +78,8 @@ legal:
       batch-size: ${LEGAL_AGENT_OUTBOX_BATCH_SIZE:100}
       max-retries: ${LEGAL_AGENT_OUTBOX_MAX_RETRIES:10}
       processing-timeout-millis: ${LEGAL_AGENT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}
+    events:
+      stream-key: ${LEGAL_AGENT_EVENTS_STREAM_KEY:legal:agent:events}
   trace:
     archive-enabled: ${LEGAL_TRACE_ARCHIVE_ENABLED:true}
     retention-days: ${LEGAL_TRACE_RETENTION_DAYS:90}
