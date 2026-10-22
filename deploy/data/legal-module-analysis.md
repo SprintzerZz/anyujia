@@ -999,6 +999,24 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 
 资源窗口压测摘要：`deploy/perf/results/legal-agent-gateway-resource-300-2026-10-23.json`。
 
+### 11.0.22 本轮第二十三阶段：Gateway 显式配置 Reactor Netty ConnectionProvider
+
+针对 300 req/s 资源窗口中 `gateway.forward.active` 峰值达到 1,193、内存持续上涨且 HTTP Client 连接池指标缺失的问题，本阶段不再依赖默认 Elastic 连接池，改为使用 Spring Cloud Gateway 原生 `spring.cloud.gateway.httpclient.pool` 配置显式构造 Reactor Netty `ConnectionProvider`：
+
+- 固定连接池最大连接数默认 256，可通过 `GATEWAY_HTTPCLIENT_MAX_CONNECTIONS` 调整。
+- 连接池等待队列通过 `acquire-timeout=1000ms` 设定有界等待，避免慢下游导致请求无限排队。
+- 增加最大空闲时间 30 秒、最大生命周期 5 分钟和 30 秒后台驱逐，减少失效连接长期占用。
+- 开启连接池 Micrometer 指标，配置名为 `gateway`，便于观测 active、idle、pending 等连接池状态；指标开关为 `GATEWAY_HTTPCLIENT_POOL_METRICS_ENABLED`。
+- 增加连接建立超时 3 秒、响应超时 15 秒，均保留环境变量覆盖能力。
+
+本次使用的是 Spring Cloud Gateway 官方 `HttpClientFactory` 已有的 `ConnectionProvider` 构造链路；配置层改动即可真正作用于 Gateway 下游 HTTP 客户端，无需额外维护第二套 HTTP Client Bean。官方扩展与 HTTP Client 配置说明见 [Spring Cloud Gateway HTTP Client 文档](https://docs.spring.io/spring-cloud-gateway/reference/4.1/spring-cloud-gateway/http-client.html)。
+
+#### 本阶段验证
+
+- 已将连接池、连接获取等待、超时、空闲/生命周期和连接池指标全部改为环境变量可覆盖配置。
+- 下一步需重新构建 Gateway 并启动后，从 Actuator `/actuator/metrics` 检查 `reactor.netty.connection.provider.*` 指标是否出现，再执行 100/200/300 req/s 同口径阶梯压测。
+- 重点验收指标：`pending.connections` 不得持续单调增长、active connections 不得长期打满 256、Gateway forward P95/P99 应与上一轮 8.59/10.20 秒基线对比；若仍出现千级活跃转发，则需要继续收紧 Gateway 入口限流或扩容 Gateway 实例。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

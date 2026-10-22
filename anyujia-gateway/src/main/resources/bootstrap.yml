@@ -38,8 +38,18 @@ spring:
       metrics:
         enabled: ${GATEWAY_METRICS_ENABLED:true}
       httpclient:
-        metrics:
-          enabled: ${GATEWAY_HTTPCLIENT_METRICS_ENABLED:true}
+        connect-timeout: ${GATEWAY_HTTPCLIENT_CONNECT_TIMEOUT_MS:3000}
+        response-timeout: ${GATEWAY_HTTPCLIENT_RESPONSE_TIMEOUT:15s}
+        pool:
+          # 固定连接池，避免默认 Elastic 池在下游变慢时无限堆积等待请求。
+          type: ${GATEWAY_HTTPCLIENT_POOL_TYPE:fixed}
+          name: ${GATEWAY_HTTPCLIENT_POOL_NAME:gateway}
+          max-connections: ${GATEWAY_HTTPCLIENT_MAX_CONNECTIONS:256}
+          acquire-timeout: ${GATEWAY_HTTPCLIENT_ACQUIRE_TIMEOUT_MS:1000}
+          max-idle-time: ${GATEWAY_HTTPCLIENT_MAX_IDLE_TIME:30s}
+          max-life-time: ${GATEWAY_HTTPCLIENT_MAX_LIFE_TIME:5m}
+          eviction-interval: ${GATEWAY_HTTPCLIENT_EVICTION_INTERVAL:30s}
+          metrics: ${GATEWAY_HTTPCLIENT_POOL_METRICS_ENABLED:true}
       routes:
         - id: anyujia-admin
           uri: lb://anyujia-admin
