@@ -23,6 +23,8 @@ public class LegalAgentTask {
     private String leaseOwner;
     private LocalDateTime leaseUntil;
     private String answerJson;
+    private String contextHash;
+    private String contextStatus;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

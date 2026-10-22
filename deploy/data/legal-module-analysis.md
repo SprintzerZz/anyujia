@@ -1462,6 +1462,26 @@ python deploy/eval/legal-context/evaluate.py `
 
 本阶段结论：法律 Agent 已具备可重复的离线上下文评估基线；后续每次压缩、摘要或 RAG 改动，都必须在这 7 个用例上比较证据覆盖和冲突识别结果，避免只看模型最终文本。
 
+### 11.0.39 本轮第四十阶段：上下文版本写入任务审计
+
+本阶段将上下文版本从 Redis 运行态标记提升为任务结果审计字段：
+
+- 新增数据库迁移 `V32__legal_agent_context_version.sql`。
+- `legal_agent_task` 增加 `context_hash` 和 `context_status` 字段。
+- `LegalAgentAnswerVO` 和 `LegalAgentTaskVO` 返回上下文 hash/status，前端和审计系统可以识别结果基于哪个上下文版本。
+- Agent 任务完成时将 hash/status 和最终答案在同一条完成更新链路写入任务表，避免只在日志中记录版本。
+- 支持 `FIRST`、`UNCHANGED`、`CHANGED`、`UNKNOWN` 四种状态；`CHANGED` 表示本次分析使用的 grounding 与上一轮不同，需要优先展示最新证据和重新确认提示。
+
+#### 验证结果
+
+- Legal 服务编译成功。
+- 上下文、合同、聊天和历史压缩定向测试：7/7 通过。
+- 数据库迁移尚未在当前 Docker 环境执行，部署时需按 Flyway 顺序执行 V32 后再启动新版本服务。
+
+#### 当前边界
+
+当前 `CHANGED` 是任务级版本变化标记，尚未在任务执行中途二次读取上下文并自动取消旧任务。下一阶段将增加结果提交前的上下文复核：如果合同或聊天在模型生成期间发生变化，结果标记为 `STALE_CONTEXT`，并触发重新分析或提示用户确认。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

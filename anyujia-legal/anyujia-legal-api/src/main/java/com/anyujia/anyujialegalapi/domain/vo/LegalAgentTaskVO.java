@@ -15,6 +15,8 @@ public class LegalAgentTaskVO {
     private List<LegalCitationVO> citations;
     private String mode;
     private boolean degraded;
+    private String contextHash;
+    private String contextStatus;
     private String errorMessage;
     private Long createdAt;
     private Long completedAt;

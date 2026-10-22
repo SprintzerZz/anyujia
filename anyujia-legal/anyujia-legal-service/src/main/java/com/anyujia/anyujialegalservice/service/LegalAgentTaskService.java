@@ -109,7 +109,10 @@ public class LegalAgentTaskService {
             request.setAsOfDate(task.getAsOfDate().toString());
             LegalAgentAnswerVO answer = agentService.answer(task.getTenantId(), request);
             String answerJson = objectMapper.writeValueAsString(answer);
-            if (taskMapper.complete(taskId, workerId, answerJson) > 0) {
+            task.setContextHash(answer.getContextHash());
+            task.setContextStatus(answer.getContextStatus());
+            if (taskMapper.complete(taskId, workerId, answerJson,
+                    answer.getContextHash(), answer.getContextStatus()) > 0) {
                 try {
                     eventService.append(taskId, task.getTenantId(), "result", answerJson);
                 } catch (Exception eventError) {
@@ -162,6 +165,8 @@ public class LegalAgentTaskService {
                 result.setCitations(answer.getCitations());
                 result.setMode(answer.getMode());
                 result.setDegraded(answer.isDegraded());
+                result.setContextHash(answer.getContextHash());
+                result.setContextStatus(answer.getContextStatus());
             } catch (JsonProcessingException ex) {
                 result.setStatus(FAILED);
                 result.setErrorMessage("任务结果解析失败");

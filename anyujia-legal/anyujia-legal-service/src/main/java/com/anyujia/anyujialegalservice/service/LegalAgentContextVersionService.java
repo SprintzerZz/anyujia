@@ -23,12 +23,16 @@ public class LegalAgentContextVersionService {
     private volatile boolean redisUnavailable;
 
     public ChangeStatus record(Long tenantId, Long conversationId, String grounding) {
+        return recordVersion(tenantId, conversationId, grounding).status();
+    }
+
+    public ContextVersion recordVersion(Long tenantId, Long conversationId, String grounding) {
         if (redisUnavailable || tenantId == null || conversationId == null) {
-            return ChangeStatus.UNKNOWN;
+            return new ContextVersion(sha256(grounding), ChangeStatus.UNKNOWN);
         }
         RedisService redis = redisService();
         if (redis == null) {
-            return ChangeStatus.UNKNOWN;
+            return new ContextVersion(sha256(grounding), ChangeStatus.UNKNOWN);
         }
         String current = sha256(grounding);
         String key = KEY_PREFIX + tenantId + ":" + conversationId;
@@ -36,13 +40,14 @@ public class LegalAgentContextVersionService {
             String previous = redis.getCacheObject(key, String.class);
             redis.setCacheObject(key, current, TTL_SECONDS, TimeUnit.SECONDS);
             if (previous == null || previous.isBlank()) {
-                return ChangeStatus.FIRST;
+                return new ContextVersion(current, ChangeStatus.FIRST);
             }
-            return previous.equals(current) ? ChangeStatus.UNCHANGED : ChangeStatus.CHANGED;
+            ChangeStatus status = previous.equals(current) ? ChangeStatus.UNCHANGED : ChangeStatus.CHANGED;
+            return new ContextVersion(current, status);
         } catch (Exception ex) {
             redisUnavailable = true;
             log.warn("Legal agent context version disabled after Redis failure: {}", ex.getMessage());
-            return ChangeStatus.UNKNOWN;
+            return new ContextVersion(current, ChangeStatus.UNKNOWN);
         }
     }
 
@@ -70,5 +75,8 @@ public class LegalAgentContextVersionService {
         UNCHANGED,
         CHANGED,
         UNKNOWN
+    }
+
+    public record ContextVersion(String hash, ChangeStatus status) {
     }
 }

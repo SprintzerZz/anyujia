@@ -51,9 +51,9 @@ public class LegalAgentService {
             throw new ServiceException("合同不存在", ResultCode.TOKEN_CHECK_FAILED.getCode());
         }
         String grounding = groundingContext(tenantId, binding, contract, request.getQuery());
-        LegalAgentContextVersionService.ChangeStatus contextStatus = contextVersionService.record(
+        LegalAgentContextVersionService.ContextVersion contextVersion = contextVersionService.recordVersion(
                 tenantId, binding.getChatConversationId(), grounding);
-        if (contextStatus == LegalAgentContextVersionService.ChangeStatus.CHANGED) {
+        if (contextVersion.status() == LegalAgentContextVersionService.ChangeStatus.CHANGED) {
             grounding = "[context_version changed=true; favor_latest_evidence]\n" + grounding;
         }
         String regionCode = request.getRegionCode() == null || request.getRegionCode().isBlank()
@@ -72,6 +72,8 @@ public class LegalAgentService {
         vo.setCitations(citations(generation.citationIndexes(), passages));
         vo.setMode(generation.mode());
         vo.setDegraded(generation.degraded());
+        vo.setContextHash(contextVersion.hash());
+        vo.setContextStatus(contextVersion.status().name());
         return vo;
     }
 
