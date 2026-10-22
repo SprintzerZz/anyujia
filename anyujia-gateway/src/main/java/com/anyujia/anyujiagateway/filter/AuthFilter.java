@@ -8,11 +8,11 @@ import com.anyujia.anyujiacommoncore.utils.JsonUtil;
 import com.anyujia.anyujiacommoncore.utils.StringUtil;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
-import com.anyujia.anyujiacommondomain.constants.AuthenticationConstants;
-import com.anyujia.anyujiacommondomain.domain.WebSocketTicketPrincipal;
 import com.anyujia.anyujiacommonredis.service.RedisService;
 import com.anyujia.anyujiagateway.config.IgnoreWhiteProperties;
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -112,6 +112,9 @@ public class AuthFilter implements GlobalFilter, Ordered {
      */
     private final RedisService redisService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MeterRegistry meterRegistry;
+
     /**
      * 执行网关认证逻辑。
      *
@@ -138,8 +141,11 @@ public class AuthFilter implements GlobalFilter, Ordered {
             return unauthorizedResponse(exchange, ResultCode.TOKEN_EMPTY);
         }
 
+        long authStarted = System.nanoTime();
+        long redisStarted = System.nanoTime();
         Map<String, Object> loginUser = redisService.getCacheObject(getTokenKey(token), new TypeReference<Map<String, Object>>() {
         });
+        recordTimer("gateway.auth.redis", System.nanoTime() - redisStarted);
         if (loginUser == null || loginUser.isEmpty()) {
             return unauthorizedResponse(exchange, ResultCode.LOGIN_STATUS_OVERTIME);
         }
@@ -152,22 +158,36 @@ public class AuthFilter implements GlobalFilter, Ordered {
             return unauthorizedResponse(exchange, ResultCode.TOKEN_CHECK_FAILED);
         }
 
-        return forwardAuthenticated(exchange, chain, token, userId, userName, userFrom, userType);
+        return forwardAuthenticated(exchange, chain, token, userId, userName, userFrom, userType)
+                .doFinally(signal -> recordTimer("gateway.auth.total", System.nanoTime() - authStarted));
+    }
+
+    private void recordTimer(String name, long nanos) {
+        if (meterRegistry != null) {
+            Timer.builder(name).register(meterRegistry)
+                    .record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+        }
     }
 
     private Mono<Void> authenticateWebSocketTicket(ServerWebExchange exchange,
                                                     GatewayFilterChain chain,
                                                     String ticket) {
-        WebSocketTicketPrincipal principal = redisService.getAndDeleteCacheObject(
-                AuthenticationConstants.WEBSOCKET_TICKET_PREFIX + ticket,
-                WebSocketTicketPrincipal.class);
-        if (principal == null
-                || !StringUtils.hasText(principal.userId())
-                || !StringUtils.hasText(principal.userFrom())) {
+        if (!StringUtils.hasText(ticket)) {
             return unauthorizedResponse(exchange, ResultCode.TOKEN_CHECK_FAILED);
         }
-        return forwardAuthenticated(exchange, chain, null,
-                principal.userId(), principal.userName(), principal.userFrom(), principal.userType());
+        // The chat service is the authentication authority for the one-time ticket. Keeping the
+        // ticket in the query string lets the downstream service consume it atomically. Do not
+        // forward client-controlled identity headers; the chat service ignores them and derives
+        // the identity exclusively from the consumed ticket.
+        ServerHttpRequest.Builder mutate = exchange.getRequest().mutate();
+        mutate.headers(headers -> {
+            headers.remove(USER_KEY_HEADER);
+            headers.remove(USER_ID_HEADER);
+            headers.remove(USER_NAME_HEADER);
+            headers.remove(USER_FROM_HEADER);
+            headers.remove(USER_TYPE_HEADER);
+        });
+        return chain.filter(exchange.mutate().request(mutate.build()).build());
     }
 
     private Mono<Void> forwardAuthenticated(ServerWebExchange exchange,

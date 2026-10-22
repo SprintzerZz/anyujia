@@ -138,7 +138,12 @@ public class LegalController implements LegalFeignClient {
                                                        @RequestHeader("userFrom") String userFrom,
                                                        @RequestBody @Valid LegalAgentTaskSubmitReqDTO request) {
         requireTenant(userType, userFrom);
-        return ApiResult.success(legalAgentTaskService.submit(userId, request));
+        long started = System.nanoTime();
+        try {
+            return ApiResult.success(legalAgentTaskService.submit(userId, request));
+        } finally {
+            sseMetrics.recordSubmitStage("controller", System.nanoTime() - started);
+        }
     }
 
     @GetMapping("/agent/tasks/{taskId}")

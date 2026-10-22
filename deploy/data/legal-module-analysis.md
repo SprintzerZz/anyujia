@@ -713,6 +713,28 @@ event-publish-pool   结果事件发布
 
 下一步应在 Gateway 容器稳定在线的前提下，使用本次幂等写入优化版本重新跑 500 req/s 基线，并增加 Controller、Service、数据库插入和 Outbox 插入的分段 Timer，确认 P95 改善来自查询减少，而不是测试环境波动。
 
+### 11.0.12 本轮第十三阶段：入队链路分段耗时观测
+
+本阶段完成入队链路埋点，为下一轮压测提供可拆分的耗时证据：
+
+- Legal Controller：`legal.agent.submit{stage=controller}`。
+- 任务表插入：`legal.agent.submit{stage=task_insert}`。
+- Outbox 插入：`legal.agent.submit{stage=outbox_insert}`。
+- Legal Service 总体处理：`legal.agent.submit{stage=service}`。
+- Gateway Redis Token 查询：`gateway.auth.redis`。
+- Gateway 完整认证及转发前处理：`gateway.auth.total`。
+
+埋点使用固定 stage/name，不引入用户、Token、任务 ID 等高基数标签；Gateway 的 MeterRegistry 在单元测试环境缺失时安全降级，不影响认证逻辑。
+
+#### 验证结果
+
+- Legal 模块构建成功。
+- Gateway 模块构建成功。
+- Gateway `AuthFilterTest`：1 个测试通过。
+- Legal 定向测试：12 个测试通过，失败数 0。
+
+下一步重新启动稳定的 Gateway/Legal 压测环境，执行 500 req/s 入队基线，并从 Actuator/Prometheus 读取上述 Timer 的 P95/P99，完成“Gateway 鉴权 vs 任务插入 vs Outbox 插入”的瓶颈归因。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

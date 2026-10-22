@@ -52,4 +52,11 @@ public class LegalAgentMetrics {
                 .description("Legal Agent SSE write duration")
                 .register(registry).record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
     }
+
+    public void recordSubmitStage(String stage, long nanos) {
+        Timer.builder("legal.agent.submit")
+                .description("Legal Agent enqueue stage duration")
+                .tag("stage", stage)
+                .register(registry).record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
+    }
 }

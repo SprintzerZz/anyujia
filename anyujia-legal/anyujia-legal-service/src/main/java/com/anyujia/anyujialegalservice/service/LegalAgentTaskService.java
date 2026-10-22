@@ -38,6 +38,7 @@ public class LegalAgentTaskService {
     private final ObjectMapper objectMapper;
     private final LegalAgentTaskOutboxMapper outboxMapper;
     private final LegalAgentTaskEventService eventService;
+    private final LegalAgentMetrics metrics;
 
     @Transactional(rollbackFor = Exception.class)
     public LegalAgentTaskVO submit(Long tenantId, LegalAgentTaskSubmitReqDTO request) {
@@ -54,14 +55,18 @@ public class LegalAgentTaskService {
         task.setAttemptCount(0);
         task.setCreatedAt(LocalDateTime.now());
         task.setUpdatedAt(LocalDateTime.now());
+        long taskInsertStarted = System.nanoTime();
         try {
             taskMapper.insert(task);
         } catch (DuplicateKeyException ex) {
             LegalAgentTask existing = findByRequestId(tenantId, request.getRequestId());
             if (existing != null) {
+                metrics.recordSubmitStage("duplicate", System.nanoTime() - taskInsertStarted);
                 return toVO(existing);
             }
             throw ex;
+        } finally {
+            metrics.recordSubmitStage("task_insert", System.nanoTime() - taskInsertStarted);
         }
         LegalAgentTaskOutbox outbox = new LegalAgentTaskOutbox();
         outbox.setTaskId(task.getId());
@@ -72,7 +77,10 @@ public class LegalAgentTaskService {
         outbox.setNextRetryAt(LocalDateTime.now());
         outbox.setCreatedAt(LocalDateTime.now());
         outbox.setUpdatedAt(LocalDateTime.now());
+        long outboxInsertStarted = System.nanoTime();
         outboxMapper.insert(outbox);
+        metrics.recordSubmitStage("outbox_insert", System.nanoTime() - outboxInsertStarted);
+        metrics.recordSubmitStage("service", System.nanoTime() - taskInsertStarted);
         return toVO(task);
     }
 
