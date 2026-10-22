@@ -35,6 +35,11 @@ spring:
             group: DEFAULT_GROUP
             refresh: true
     gateway:
+      metrics:
+        enabled: ${GATEWAY_METRICS_ENABLED:true}
+      httpclient:
+        metrics:
+          enabled: ${GATEWAY_HTTPCLIENT_METRICS_ENABLED:true}
       routes:
         - id: anyujia-admin
           uri: lb://anyujia-admin

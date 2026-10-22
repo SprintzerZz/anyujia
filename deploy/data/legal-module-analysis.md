@@ -922,6 +922,25 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 
 直连压测摘要：`deploy/perf/results/legal-agent-direct-backpressure-2026-10-22.json`。
 
+### 11.0.19 本轮第二十阶段：Gateway 转发层观测补齐
+
+针对直连与 Gateway 对照中发现的转发长尾，本阶段在 Gateway 增加低基数转发观测：
+
+- `gateway.forward.active`：当前等待下游响应的 Gateway 请求数。
+- `gateway.forward{route=...}`：从 Gateway 开始转发到下游响应完成的耗时 Timer，发布 P95/P99。
+- 开启 Spring Cloud Gateway metrics 和 HTTP Client metrics 配置开关，分别由 `GATEWAY_METRICS_ENABLED`、`GATEWAY_HTTPCLIENT_METRICS_ENABLED` 控制。
+
+指标只使用 route id 标签，不记录 Token、租户、任务 ID 或 URL 参数，避免高基数导致指标系统膨胀。
+
+#### 本阶段验证
+
+- Gateway 构建成功。
+- `AuthFilterTest`：1 个测试通过。
+- 最新 Gateway 容器健康检查 HTTP 200。
+- Actuator `gateway.forward.active` 已成功注册并返回当前值 0。
+
+下一步使用该版本重新跑 Gateway → Legal 的阶梯压测，并同步采集 `gateway.auth.redis`、`gateway.auth.total`、`gateway.forward`、`gateway.forward.active`、HTTP Client metrics、CPU 和连接数，确定 Gateway 的饱和点和长尾来源。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
