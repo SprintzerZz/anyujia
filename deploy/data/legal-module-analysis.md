@@ -899,6 +899,29 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 
 背压压测摘要：`deploy/perf/results/legal-agent-backpressure-2026-10-22.json`。
 
+### 11.0.18 本轮第十九阶段：Legal 直连与 Gateway 链路对照
+
+为拆分上一阶段剩余长尾，本阶段保持 Legal 连接池 10、入队背压 10、500 req/s、30 秒场景不变，分别执行 Gateway 内网访问和直接访问 Legal 容器的对照测试。
+
+#### 对照结果
+
+| 链路 | 实际请求 | HTTP 200 | 拒绝/失败 | 实际吞吐 | 平均耗时 | P95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gateway → Legal | 4,813 | 1,766 | 3,047 | 111.48 req/s | 13.26 s | 19.64 s |
+| 直连 Legal | 10,268 | 4,469 | 5,799 | 242.74 req/s | 5.42 s | 10.40 s |
+
+直连 Legal 的成功请求 P95 约 7.83 秒，Controller Timer 平均约 83.89ms；task insert、Outbox insert、Service 平均约 20.66ms、9.33ms、31.01ms。两条链路的 Legal 业务分段量级接近，但 Gateway 链路的端到端 P95 和有效吞吐明显更差。
+
+#### 结论
+
+- 背压保护仍然生效，直连场景 Hikari pending 结束值为 0，连接获取超时未增加。
+- 同一 Legal 实例直连吞吐约为 Gateway 链路的 2.18 倍，P95 降低约 47%，因此剩余长尾主要来自 Gateway 转发层、连接建立/事件循环排队或单机网络资源争用。
+- 本结果不是 Gateway 生产容量结论，因为压测发生在同一开发主机；但已经证明继续扩大 Legal 线程池或 Hikari 不能解决当前 Gateway 链路长尾。
+
+下一步应对 Gateway 单独做转发链路观测：采集 Gateway `gateway.auth.redis`、`gateway.auth.total`、HTTP client pending/active、事件循环线程和容器 CPU/连接数，并用固定并发、较低目标速率做阶梯压测，确定 Gateway 的饱和点后再调整连接池、限流和超时参数。
+
+直连压测摘要：`deploy/perf/results/legal-agent-direct-backpressure-2026-10-22.json`。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
