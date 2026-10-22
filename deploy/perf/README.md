@@ -40,3 +40,54 @@ connection limits, Redis, and RabbitMQ.
 `SESSION_IDS`. Start at `RATE=100`, then increase only after Prometheus shows
 stable `chat_message_db_write_duration`, `chat_message_send_duration`, and low
 `chat_message_push_failures_total`.
+
+## Legal Agent load test
+
+Run `legal-agent-load.js` from a separate load-generator host. It defaults to
+500 enqueue requests per second and 200 end-to-end VUs, which is deliberately
+higher than the old 20-concurrent/200-request sample. Supply `BASE_URL`,
+`TOKEN` or `TOKENS`, `USER_ID`, and `CHAT_CONVERSATION_ID`; increase rates only
+after checking MySQL, RabbitMQ, Redis, Agent Worker, RAG and model metrics.
+
+`legal-agent-sse-scale.js` is the long-connection test. Set `TASK_IDS` to a
+pool of pre-created pending task IDs, then start with `SSE_TARGET_VUS=1000` and
+increase to 2000. This isolates SSE capacity from task creation and AI latency.
+Do not claim a capacity result unless the run records HTTP status, SSE connect
+latency, writer-pool queue/rejections, queue overflow, Redis Stream errors,
+MySQL connection usage and container CPU/memory.
+
+## Safe single-host baseline runner
+
+Use `chat-baseline-diagnose.ps1` for the evidence-gated database baseline. Its
+default plan is `100, 200, 300, 400, 500 msg/s`; it stops after the first stage
+that misses HTTP SLOs, loses a core container, fails evidence capture, or leaves
+more than the permitted Outbox backlog after recovery.
+
+Inspect the plan without contacting Docker:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/perf/chat-baseline-diagnose.ps1 -PlanOnly
+```
+
+Run the bounded default plan after supplying the local development secrets:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/perf/chat-baseline-diagnose.ps1 `
+  -MysqlPassword '<app-password>' -MysqlAdminPassword '<root-password>' `
+  -RedisPassword '<redis-password>'
+```
+
+The k6 container is limited to 512 MB, 2 CPUs, 256 VUs, and a 5-second request
+timeout by default. A 1000 msg/s stage is never implicit and requires both an
+explicit rate list and `-Allow1000`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/perf/chat-baseline-diagnose.ps1 `
+  -Rates 100,200,300,400,500,1000 -Allow1000 `
+  -MysqlPassword '<app-password>' -MysqlAdminPassword '<root-password>' `
+  -RedisPassword '<redis-password>'
+```
+
+Every executed stage writes `stage-<rate>.json`; `diagnosis.json` keeps the
+physical-sharding gate closed when evidence is incomplete or the environment
+is unhealthy. Prefer a separate load-generator host for final capacity claims.
