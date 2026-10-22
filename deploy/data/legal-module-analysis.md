@@ -970,6 +970,35 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 - `deploy/perf/results/legal-agent-gateway-step-200-2026-10-22.json`
 - `deploy/perf/results/legal-agent-gateway-step-300-2026-10-22.json`
 
+### 11.0.21 本轮第二十二阶段：Gateway 300 req/s 资源窗口采样
+
+本阶段在最新观测版 Gateway/Legal 容器上，以 300 req/s、持续 20 秒执行入队压测，并每 2 秒采集 Gateway `forward.active`、JVM 线程、进程 CPU 和容器 CPU/内存。
+
+#### 压测与资源结果
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| 实际 HTTP 请求 | 4,135 |
+| HTTP 200 | 2,211 |
+| HTTP 失败 | 1,924 |
+| dropped iterations | 1,866 |
+| 端到端平均耗时 | 5.69 s |
+| 端到端 P95/P99 | 9.05 s / 10.11 s |
+| Gateway forward P95/P99 | 8.59 s / 10.20 s |
+| `gateway.forward.active` 峰值 | 1,193 |
+| Gateway 容器 CPU 峰值 | 364.50% |
+| Gateway 容器内存 | 536 MiB → 约 780 MiB |
+| JVM live threads | 100–102 |
+
+#### 结论
+
+- Gateway 转发活跃请求在压力初期快速升至千级，且容器 CPU 达到约 3.6 个核，内存同步增长；这是当前长尾的直接资源证据。
+- JVM 线程数保持约 100，没有出现线程数量失控；问题更接近 Reactor Netty 事件循环/HTTP Client 连接与下游等待叠加，而不是传统线程池耗尽。
+- 当前版本仅成功暴露自定义 `gateway.forward`，Spring Cloud Gateway HTTP Client metrics 未出现在 Actuator 指标列表中，不能声称已拿到连接池 active/pending 证据。
+- 本轮结果进一步证明 300 req/s 已超过当前单机 Gateway 稳态能力；下一步应显式配置并观测 Reactor Netty ConnectionProvider，或先增加 Gateway 并发/连接上限和限流保护，再做相同阶梯复测。
+
+资源窗口压测摘要：`deploy/perf/results/legal-agent-gateway-resource-300-2026-10-23.json`。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
