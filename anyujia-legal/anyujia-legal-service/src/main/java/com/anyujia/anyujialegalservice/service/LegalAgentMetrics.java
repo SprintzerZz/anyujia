@@ -57,6 +57,7 @@ public class LegalAgentMetrics {
         Timer.builder("legal.agent.submit")
                 .description("Legal Agent enqueue stage duration")
                 .tag("stage", stage)
+                .publishPercentiles(0.95, 0.99)
                 .register(registry).record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
     }
 }

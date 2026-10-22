@@ -735,6 +735,38 @@ event-publish-pool   结果事件发布
 
 下一步重新启动稳定的 Gateway/Legal 压测环境，执行 500 req/s 入队基线，并从 Actuator/Prometheus 读取上述 Timer 的 P95/P99，完成“Gateway 鉴权 vs 任务插入 vs Outbox 插入”的瓶颈归因。
 
+### 11.0.13 本轮第十四阶段：分段耗时实测与瓶颈归因
+
+本阶段使用刚构建的 Gateway/Legal JAR 启动独立压测容器，开启 Actuator `metrics`，通过有效租户 Token 和有效聊天会话执行 500 req/s、持续 30 秒的入队压测。
+
+#### 端到端结果
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| HTTP 请求数 | 5411 |
+| HTTP 错误率 | 6.65% |
+| 实际完成吞吐 | 149.76 req/s |
+| dropped iterations | 9591 |
+| 入队 P95 | 14.59 s |
+| 入队 P99 | 未达到稳定采样条件，需先解决本地资源争用 |
+
+本轮未达 500 req/s，结果不能作为产品容量结论；但分段指标已经足以确认瓶颈位置。
+
+#### Actuator 分段指标
+
+| 指标 | 样本数 | 平均耗时 | 最大耗时 |
+| --- | ---: | ---: | ---: |
+| Gateway Redis Token 查询 | 5411 | 9.54 ms | 340.39 ms |
+| Gateway 鉴权处理 | 5411 | 9.82 ms | 340.73 ms |
+| Legal task insert | 5051 | 12.95 ms | 765.65 ms |
+| Legal outbox insert | 5051 | 9.58 ms | 534.04 ms |
+| Legal service | 5051 | 24.15 ms | 1.07 s |
+| Legal controller | 5411 | 1.087 s | 3.73 s |
+
+结论：Gateway 鉴权和两次数据库插入均不是本轮秒级 P95 的主要原因，主要等待集中在 Legal Controller 请求处理外围和本地容器/数据库资源排队；之前把下游等待混入 Gateway `auth.total` 的问题已修正。Timer 当前通过 Actuator 暴露 count、total、max，P95/P99 继续由 k6 端到端结果采集。
+
+原始结果：`deploy/perf/results/legal-agent-enqueue-instrumented-final-2026-10-22.json`。下一步应采集 JVM 线程池、Tomcat 工作线程、Hikari 活跃连接/等待线程和 MySQL 慢查询，继续确认 Controller 外围排队的具体来源。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

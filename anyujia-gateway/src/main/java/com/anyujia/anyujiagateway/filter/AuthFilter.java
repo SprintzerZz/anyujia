@@ -158,13 +158,13 @@ public class AuthFilter implements GlobalFilter, Ordered {
             return unauthorizedResponse(exchange, ResultCode.TOKEN_CHECK_FAILED);
         }
 
-        return forwardAuthenticated(exchange, chain, token, userId, userName, userFrom, userType)
-                .doFinally(signal -> recordTimer("gateway.auth.total", System.nanoTime() - authStarted));
+        recordTimer("gateway.auth.total", System.nanoTime() - authStarted);
+        return forwardAuthenticated(exchange, chain, token, userId, userName, userFrom, userType);
     }
 
     private void recordTimer(String name, long nanos) {
         if (meterRegistry != null) {
-            Timer.builder(name).register(meterRegistry)
+            Timer.builder(name).publishPercentiles(0.95, 0.99).register(meterRegistry)
                     .record(nanos, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
     }

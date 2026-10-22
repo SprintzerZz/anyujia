@@ -155,5 +155,5 @@ legal:
       model: ${LEGAL_LOCAL_RERANKER_MODEL:BAAI/bge-reranker-v2-m3}
       top-n: ${LEGAL_RERANK_TOP_N:8}
 
-management.endpoints.web.exposure.include: health,info
+management.endpoints.web.exposure.include: health,info,metrics
 
