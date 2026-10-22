@@ -1,0 +1,34 @@
+{
+  "testTime": "2026-10-22T20:48:17+08:00",
+  "scenario": "enqueue",
+  "targetRatePerSecond": 500,
+  "duration": "30s",
+  "validTenant": true,
+  "httpRequests": 4139,
+  "http200": 3712,
+  "http500": 412,
+  "connectionOrNoStatus": 15,
+  "droppedIterations": 10862,
+  "enqueueLatencyMs": {
+    "avg": 14748.42,
+    "p50": 14801.40,
+    "p95": 21647.00,
+    "p99": 24168.93,
+    "max": 27693.53
+  },
+  "resourceEvidence": {
+    "hikariMaximumPoolSize": 10,
+    "hikariPendingPeak": 171,
+    "hikariConnectionTimeoutCount": 421,
+    "legalExecutorQueuePeak": 0,
+    "mysqlThreadsRunningObservedRange": "3-14",
+    "slowQueryLog": "OFF"
+  },
+  "stageAverageMs": {
+    "controller": 1467.99,
+    "taskInsert": 24.57,
+    "outboxInsert": 15.13,
+    "service": 40.46
+  },
+  "conclusion": "Hikari connection acquisition and synchronous database-backed enqueue saturation are the primary bottleneck in this environment."
+}
