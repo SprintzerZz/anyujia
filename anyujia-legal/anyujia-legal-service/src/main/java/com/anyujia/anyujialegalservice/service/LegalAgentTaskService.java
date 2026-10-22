@@ -5,7 +5,9 @@ import com.anyujia.anyujialegalapi.domain.dto.LegalAgentTaskSubmitReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentTaskVO;
 import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTask;
+import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTaskOutbox;
 import com.anyujia.anyujialegalservice.mapper.LegalAgentTaskMapper;
+import com.anyujia.anyujialegalservice.mapper.LegalAgentTaskOutboxMapper;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -20,8 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Service
@@ -36,7 +36,7 @@ public class LegalAgentTaskService {
     private final LegalAgentTaskMapper taskMapper;
     private final LegalAgentService agentService;
     private final ObjectMapper objectMapper;
-    private final AsyncLegalAgentTaskDispatcher dispatcher;
+    private final LegalAgentTaskOutboxMapper outboxMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public LegalAgentTaskVO submit(Long tenantId, LegalAgentTaskSubmitReqDTO request) {
@@ -62,16 +62,16 @@ public class LegalAgentTaskService {
         } catch (DuplicateKeyException ex) {
             return toVO(findByRequestId(tenantId, request.getRequestId()));
         }
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    dispatcher.submit(task.getId());
-                }
-            });
-        } else {
-            dispatcher.submit(task.getId());
-        }
+        LegalAgentTaskOutbox outbox = new LegalAgentTaskOutbox();
+        outbox.setTaskId(task.getId());
+        outbox.setEventType("AGENT_ANSWER");
+        outbox.setPayload(String.valueOf(task.getId()));
+        outbox.setStatus(0);
+        outbox.setRetryCount(0);
+        outbox.setNextRetryAt(LocalDateTime.now());
+        outbox.setCreatedAt(LocalDateTime.now());
+        outbox.setUpdatedAt(LocalDateTime.now());
+        outboxMapper.insert(outbox);
         return toVO(task);
     }
 
@@ -103,6 +103,14 @@ public class LegalAgentTaskService {
         } catch (Exception ex) {
             log.error("Legal Agent task failed, taskId={}", taskId, ex);
             taskMapper.fail(taskId, workerId, boundedError(ex));
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${legal.agent.recovery-delay-millis:30000}")
+    public void reclaimExpiredTasks() {
+        int reclaimed = taskMapper.reclaim(LocalDateTime.now());
+        if (reclaimed > 0) {
+            log.warn("Reclaimed expired Legal Agent tasks, count={}", reclaimed);
         }
     }
 

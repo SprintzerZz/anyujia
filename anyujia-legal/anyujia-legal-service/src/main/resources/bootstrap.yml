@@ -9,8 +9,17 @@ spring:
   config:
     import:
       - optional:nacos:anyujia-legal-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
+      - optional:nacos:share-rabbitmq-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
   application:
     name: anyujia-legal
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        default-requeue-rejected: false
   profiles:
     active: ${RUN_ENV:dev}
   datasource:
@@ -62,6 +71,13 @@ legal:
     core-pool-size: ${LEGAL_AGENT_CORE_POOL_SIZE:4}
     max-pool-size: ${LEGAL_AGENT_MAX_POOL_SIZE:16}
     queue-capacity: ${LEGAL_AGENT_QUEUE_CAPACITY:200}
+    consumer-concurrency: ${LEGAL_AGENT_CONSUMER_CONCURRENCY:4}
+    recovery-delay-millis: ${LEGAL_AGENT_RECOVERY_DELAY_MILLIS:30000}
+    outbox:
+      poll-millis: ${LEGAL_AGENT_OUTBOX_POLL_MILLIS:1000}
+      batch-size: ${LEGAL_AGENT_OUTBOX_BATCH_SIZE:100}
+      max-retries: ${LEGAL_AGENT_OUTBOX_MAX_RETRIES:10}
+      processing-timeout-millis: ${LEGAL_AGENT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}
   trace:
     archive-enabled: ${LEGAL_TRACE_ARCHIVE_ENABLED:true}
     retention-days: ${LEGAL_TRACE_RETENTION_DAYS:90}

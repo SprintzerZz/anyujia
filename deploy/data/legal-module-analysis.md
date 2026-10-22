@@ -355,6 +355,21 @@ README 中记录的本地冻结集结果为：
 
 本阶段验证：新增 V28 数据库迁移已在本地开发库执行，Legal 聚合构建成功，定向测试 **12/12 通过**。当前阶段仍是“数据库持久化 + 本地异步 Worker”，尚未接入 RabbitMQ Outbox、事件广播和 Agent 问答 SSE；下一阶段将补齐可靠投递、跨实例消费和结果事件路由。
 
+### 11.0.2 本轮第三阶段已落地：RabbitMQ + Outbox 可靠投递
+
+为避免本地 `@Async` 线程池成为唯一调度入口，本阶段新增可靠投递链路：
+
+- 新增 `legal_agent_task_outbox` 表，任务创建和 Outbox 记录在同一个事务中写入；
+- 新增 Legal Agent RabbitMQ exchange、durable queue、DLX 和 DLQ；
+- Outbox Publisher 按批量扫描、原子 claim、RabbitMQ 发布、成功确认、指数退避和最大重试处理；
+- Outbox 支持处理中超时 reclaim，避免实例宕机后永久卡在 `PROCESSING`；
+- RabbitMQ Consumer 收到任务后通过 `taskId` 幂等执行，任务状态使用条件更新，重复消息不会重复生成最终结果；
+- Agent 任务增加过期租约恢复，实例异常退出后由定时任务重新置回 `PENDING`；
+- 增加独立消费者并发度、Outbox 批量、轮询周期、重试次数和处理超时配置；
+- RabbitMQ 不可用时，任务仍保留在 MySQL Outbox 中，恢复后由 Publisher 补发。
+
+本阶段验证：V29 迁移已在本地开发库执行；RabbitMQ 容器连接、交换机/队列声明和服务启动验证通过；Legal 聚合定向测试 **12/12 通过**。当前已具备“数据库任务 + Outbox + RabbitMQ Consumer”的可靠执行基础，但 Agent 结果事件尚未广播到 SSE，下一阶段继续实现事件表/Redis Streams 和断线重放。
+
 ### 11.1 当前链路为什么不合格
 
 本次压测暴露的问题不是单纯的 RAG 算法慢，而是 Legal Agent 仍然把多个重操作放在同步 HTTP/SSE 请求链路中：

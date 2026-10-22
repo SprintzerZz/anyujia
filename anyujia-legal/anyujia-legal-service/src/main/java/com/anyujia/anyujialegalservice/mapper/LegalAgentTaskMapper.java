@@ -24,4 +24,8 @@ public interface LegalAgentTaskMapper extends BaseMapper<LegalAgentTask> {
             + "WHERE id=#{taskId} AND status='RUNNING' AND lease_owner=#{workerId}")
     int fail(@Param("taskId") Long taskId, @Param("workerId") String workerId,
              @Param("errorMessage") String errorMessage);
+
+    @Update("UPDATE legal_agent_task SET status='PENDING', lease_owner=NULL, lease_until=NULL, "
+            + "updated_at=CURRENT_TIMESTAMP(3) WHERE status='RUNNING' AND lease_until < #{deadline}")
+    int reclaim(@Param("deadline") java.time.LocalDateTime deadline);
 }
