@@ -1017,6 +1017,22 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 - 下一步需重新构建 Gateway 并启动后，从 Actuator `/actuator/metrics` 检查 `reactor.netty.connection.provider.*` 指标是否出现，再执行 100/200/300 req/s 同口径阶梯压测。
 - 重点验收指标：`pending.connections` 不得持续单调增长、active connections 不得长期打满 256、Gateway forward P95/P99 应与上一轮 8.59/10.20 秒基线对比；若仍出现千级活跃转发，则需要继续收紧 Gateway 入口限流或扩容 Gateway 实例。
 
+### 11.0.23 本轮第二十四阶段：连接池配置运行态启动验证
+
+本阶段使用刚构建的 Gateway JAR，在现有开发环境网络中以临时容器启动，验证配置不会阻塞应用初始化：
+
+- Gateway 应用启动成功，日志显示 `Started AnyujiaGatewayApplication`。
+- Gateway 监听端口 18080，外部映射端口 18090。
+- `/actuator/health` 返回 HTTP 200。
+- Nacos 配置加载成功，Redis Sentinel 连接初始化成功。
+- 使用临时测试登录态请求了一个未注册的 House 路由，得到预期的 404；该请求未形成有效下游连接，因此 Actuator 指标列表中尚未出现 `reactor.netty.connection.provider.*`。
+
+#### 当前边界与下一步
+
+Reactor Netty 连接池指标是按实际连接使用后惰性注册的，仅启动和访问 Actuator 不能证明 active/pending 指标已经采集。本次没有可复用的真实租户登录态，也没有可用的有效下游路由，故本阶段只确认“配置可启动”，不把它记为“连接池指标已验证”。
+
+下一步需要在完整的 Gateway → Legal 运行编排下，使用真实租户 Token 调用有效 Legal 路由，再采集 `reactor.netty.connection.provider.*`、`gateway.forward.active`、容器 CPU/内存，并重跑 100/200/300 req/s 阶梯压测。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
