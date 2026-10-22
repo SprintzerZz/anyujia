@@ -38,6 +38,7 @@ public class LegalAgentService {
     private final LegalChatContextCompressor chatContextCompressor;
     private final LegalAgentMemoryService memoryService;
     private final LegalAgentHistoryCompressor agentHistoryCompressor;
+    private final LegalAgentContextVersionService contextVersionService;
     private final LegalAiProperties properties;
     private final ChatFeignClient chatFeignClient;
 
@@ -50,6 +51,11 @@ public class LegalAgentService {
             throw new ServiceException("合同不存在", ResultCode.TOKEN_CHECK_FAILED.getCode());
         }
         String grounding = groundingContext(tenantId, binding, contract, request.getQuery());
+        LegalAgentContextVersionService.ChangeStatus contextStatus = contextVersionService.record(
+                tenantId, binding.getChatConversationId(), grounding);
+        if (contextStatus == LegalAgentContextVersionService.ChangeStatus.CHANGED) {
+            grounding = "[context_version changed=true; favor_latest_evidence]\n" + grounding;
+        }
         String regionCode = request.getRegionCode() == null || request.getRegionCode().isBlank()
                 ? "GLOBAL" : request.getRegionCode().toUpperCase();
         LocalDate asOfDate = request.getAsOfDate() == null || request.getAsOfDate().isBlank()
