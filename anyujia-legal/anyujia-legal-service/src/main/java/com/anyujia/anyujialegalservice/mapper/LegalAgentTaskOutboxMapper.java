@@ -29,4 +29,10 @@ public interface LegalAgentTaskOutboxMapper extends BaseMapper<LegalAgentTaskOut
             + "next_retry_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3) "
             + "WHERE status=1 AND updated_at < #{deadline}")
     int reclaim(@Param("deadline") java.time.LocalDateTime deadline);
+
+    @Update("UPDATE legal_agent_task_outbox o JOIN legal_agent_task t ON t.id=o.task_id "
+            + "SET o.status=0, o.claim_token=NULL, o.next_retry_at=CURRENT_TIMESTAMP(3), "
+            + "o.updated_at=CURRENT_TIMESTAMP(3) "
+            + "WHERE t.status='PENDING' AND o.status=2 AND o.event_type='AGENT_ANSWER'")
+    int reviveForPendingTasks();
 }

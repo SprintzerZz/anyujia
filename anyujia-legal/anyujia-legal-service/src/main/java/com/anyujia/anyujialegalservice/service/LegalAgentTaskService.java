@@ -110,7 +110,9 @@ public class LegalAgentTaskService {
     public void reclaimExpiredTasks() {
         int reclaimed = taskMapper.reclaim(LocalDateTime.now());
         if (reclaimed > 0) {
+            int revived = outboxMapper.reviveForPendingTasks();
             log.warn("Reclaimed expired Legal Agent tasks, count={}", reclaimed);
+            log.info("Revived Legal Agent outbox events after task reclaim, count={}", revived);
         }
     }
 
