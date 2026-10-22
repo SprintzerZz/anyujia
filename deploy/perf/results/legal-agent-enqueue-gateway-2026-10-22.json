@@ -1,0 +1,176 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "agent enqueue status is 200": {
+                    "passes": 46865,
+                    "fails": 0,
+                    "name": "agent enqueue status is 200",
+                    "path": "::agent enqueue status is 200",
+                    "id": "1c7bc534ffe6bf7e655f9039cd1e173c"
+                },
+                "agent enqueue returns task id": {
+                    "name": "agent enqueue returns task id",
+                    "path": "::agent enqueue returns task id",
+                    "id": "58cfc17bf554165b344e7bf5969a5333",
+                    "passes": 46865,
+                    "fails": 0
+                }
+            }
+    },
+    "metrics": {
+        "legal_agent_e2e_latency": {
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0,
+            "min": 0,
+            "thresholds": {
+                "p(95)<8000": false,
+                "p(99)<15000": false
+            }
+        },
+        "data_received": {
+            "count": 18660393,
+            "rate": 150952.12039692732
+        },
+        "http_reqs": {
+            "rate": 379.1115826125419,
+            "count": 46865
+        },
+        "iterations": {
+            "count": 46865,
+            "rate": 379.1115826125419
+        },
+        "vus_max": {
+            "value": 2000,
+            "min": 500,
+            "max": 2000
+        },
+        "http_req_waiting": {
+            "avg": 4903.343338489254,
+            "min": 71.3243,
+            "med": 4864.9818,
+            "max": 10489.3198,
+            "p(90)": 6241.29142,
+            "p(95)": 6625.550379999999
+        },
+        "http_req_connecting": {
+            "avg": 0.052389094206764165,
+            "min": 0,
+            "med": 0,
+            "max": 17.97,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 46865,
+            "value": 0
+        },
+        "data_sent": {
+            "count": 19870518,
+            "rate": 160741.35338335647
+        },
+        "dropped_iterations": {
+            "count": 13136,
+            "rate": 106.26287739674278
+        },
+        "legal_agent_enqueue_failures": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count<1": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "iteration_duration": {
+            "avg": 4906.177056615756,
+            "min": 71.3243,
+            "med": 4867.6454,
+            "max": 10493.168,
+            "p(90)": 6244.11554,
+            "p(95)": 6627.139259999999
+        },
+        "legal_agent_sse_failures": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count<1": false
+            }
+        },
+        "http_req_duration": {
+            "p(90)": 6244.068020000001,
+            "p(95)": 6626.862679999999,
+            "avg": 4905.866701154308,
+            "min": 71.3243,
+            "med": 4867.3688,
+            "max": 10491.4818
+        },
+        "checks": {
+            "passes": 93730,
+            "fails": 0,
+            "value": 1
+        },
+        "vus": {
+            "value": 389,
+            "min": 389,
+            "max": 2000
+        },
+        "http_req_blocked": {
+            "avg": 0.0626275493438602,
+            "min": 0,
+            "med": 0,
+            "max": 17.97,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_sending": {
+            "med": 0,
+            "max": 9.2649,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.02775315053878167,
+            "min": 0
+        },
+        "legal_agent_enqueue_latency": {
+            "avg": 4905.866701154308,
+            "min": 71.3243,
+            "med": 4867.3688,
+            "max": 10491.4818,
+            "p(90)": 6244.068020000001,
+            "p(95)": 6626.862679999999,
+            "thresholds": {
+                "p(95)<200": true,
+                "p(99)<500": true
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 10491.4818,
+            "p(90)": 6244.068020000001,
+            "p(95)": 6626.862679999999,
+            "avg": 4905.866701154308,
+            "min": 71.3243,
+            "med": 4867.3688
+        },
+        "http_req_receiving": {
+            "p(90)": 4.154819999999999,
+            "p(95)": 8.864239999999949,
+            "avg": 2.4956095145631023,
+            "min": 0,
+            "med": 0.5071,
+            "max": 455.6193
+        }
+    }
+}

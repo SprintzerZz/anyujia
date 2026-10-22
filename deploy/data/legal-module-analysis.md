@@ -659,6 +659,41 @@ event-publish-pool   结果事件发布
 
 本阶段证明此前的 Gateway 失败来自本地基础设施配置，而不是 Agent SSE 实现。测试任务、Outbox、事件和 Token 均已清理；临时 Gateway/Legal 容器已移除，Nacos 保留为已修复状态。下一阶段应在已准备的真实租户测试数据和有效会话上下文下，通过 Gateway 重跑高并发入队、SSE 长连接及任务恢复压测，并记录 Gateway 额外耗时。
 
+### 11.0.10 本轮第十一阶段：Gateway 高并发 SSE 与入队复测
+
+本阶段使用有效聊天会话 `910000000000000031` 作为上下文，临时租户 Token 仅写入本地 Redis，未进入代码或报告；压测结束后已删除 47,865 个测试任务、Outbox、事件和 Token，并移除临时 Gateway/Legal 容器。
+
+#### Gateway SSE 长连接
+
+通过 `18080` Gateway，1000 个任务以 10 秒斜坡建立连接并保持 15 秒：
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| 目标连接数 | 1000 |
+| HTTP 200 | 1000 |
+| 失败数 | 0 |
+| 成功率 | 100% |
+| 建连 P95 | 22.75 ms |
+| 建连 P99 | 43.30 ms |
+| 收到心跳的连接数 | 1000 |
+
+原始结果：`deploy/perf/results/legal-agent-sse-gateway-ready-2026-10-22.json`。该结果覆盖 Gateway 鉴权、路由、Nacos 服务发现、Legal SSE writer 和心跳链路。
+
+#### Gateway 入队吞吐
+
+以 500 req/s 目标速率持续 2 分钟，最大 VU 2000：
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| 完成请求 | 46865 |
+| 实际吞吐 | 379.11 req/s |
+| HTTP 错误率 | 0% |
+| dropped iterations | 13136 |
+| 入队 P95 | 6.626 s |
+| 入队 P99 | 约 7.39 s |
+
+本轮仍未达到 200ms 入队延迟目标，但所有已完成请求均通过 Gateway 鉴权并返回任务 ID；主要瓶颈是本地环境在 2000 VU 上限下的请求排队、数据库写入和异步任务竞争，不能将该结果写成产品容量承诺。原始结果：`deploy/perf/results/legal-agent-enqueue-gateway-2026-10-22.json`。下一步应拆分 Gateway 鉴权、任务数据库写入和 Outbox 发布耗时，并针对数据库连接池与入队事务做专项优化。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
