@@ -15,6 +15,7 @@ import com.anyujia.anyujialegalservice.service.LegalKnowledgeSearchService;
 import com.anyujia.anyujialegalservice.service.LegalAnswerService;
 import com.anyujia.anyujialegalservice.service.LegalAgentConversationService;
 import com.anyujia.anyujialegalservice.service.LegalAgentService;
+import com.anyujia.anyujialegalservice.service.LegalAgentTaskService;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
@@ -26,16 +27,30 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.anyujia.anyujialegalapi.domain.dto.LegalSourceIngestReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalSourceVO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalSearchReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalSearchVO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAnswerReqDTO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentTaskSubmitReqDTO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentBindReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
+import com.anyujia.anyujialegalapi.domain.vo.LegalAgentTaskVO;
 
 @RestController
 @RequestMapping("/legal")
@@ -49,6 +64,13 @@ public class LegalController implements LegalFeignClient {
     private final LegalAnswerService legalAnswerService;
     private final LegalAgentService legalAgentService;
     private final LegalAgentConversationService legalAgentConversationService;
+    private final LegalAgentTaskService legalAgentTaskService;
+    @Qualifier("legalSseScheduler")
+    @Autowired
+    private ScheduledExecutorService sseScheduler;
+    @Qualifier("legalSseConnectionLimiter")
+    @Autowired
+    private Semaphore sseConnectionLimiter;
 
     @PostMapping("/contracts/upload")
     public ApiResult<ContractVO> uploadContract(@RequestHeader("userId") Long userId,
@@ -78,6 +100,78 @@ public class LegalController implements LegalFeignClient {
     public ApiResult<AssessmentJobVO> getAssessment(Long userId, Integer userType, String userFrom, Long jobId) {
         requireTenant(userType, userFrom);
         return ApiResult.success(assessmentService.get(userId, jobId));
+    }
+
+    @GetMapping(value = "/assessments/{jobId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamAssessment(@RequestHeader("userId") Long userId,
+                                       @RequestHeader("userType") Integer userType,
+                                       @RequestHeader("userFrom") String userFrom,
+                                       @PathVariable("jobId") Long jobId) {
+        requireTenant(userType, userFrom);
+        if (!sseConnectionLimiter.tryAcquire()) {
+            throw new ServiceException("法律助手实时连接数已达上限，请稍后重试",
+                    ResultCode.ERROR.getCode());
+        }
+        SseEmitter emitter = new SseEmitter(120_000L);
+        scheduleAssessmentStream(emitter, userId, jobId);
+        return emitter;
+    }
+
+    @PostMapping("/agent/tasks")
+    public ApiResult<LegalAgentTaskVO> submitAgentTask(@RequestHeader("userId") Long userId,
+                                                       @RequestHeader("userType") Integer userType,
+                                                       @RequestHeader("userFrom") String userFrom,
+                                                       @RequestBody @Valid LegalAgentTaskSubmitReqDTO request) {
+        requireTenant(userType, userFrom);
+        return ApiResult.success(legalAgentTaskService.submit(userId, request));
+    }
+
+    @GetMapping("/agent/tasks/{taskId}")
+    public ApiResult<LegalAgentTaskVO> getAgentTask(@RequestHeader("userId") Long userId,
+                                                    @RequestHeader("userType") Integer userType,
+                                                    @RequestHeader("userFrom") String userFrom,
+                                                    @PathVariable("taskId") Long taskId) {
+        requireTenant(userType, userFrom);
+        return ApiResult.success(legalAgentTaskService.get(userId, taskId));
+    }
+
+    private void scheduleAssessmentStream(SseEmitter emitter, Long userId, Long jobId) {
+        AtomicBoolean released = new AtomicBoolean();
+        AtomicReference<ScheduledFuture<?>> futureRef = new AtomicReference<>();
+        Runnable cleanup = () -> {
+            if (released.compareAndSet(false, true)) {
+                ScheduledFuture<?> future = futureRef.get();
+                if (future != null) {
+                    future.cancel(false);
+                }
+                sseConnectionLimiter.release();
+            }
+        };
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(() -> {
+            cleanup.run();
+            emitter.complete();
+        });
+        emitter.onError(ex -> cleanup.run());
+
+        ScheduledFuture<?> future = sseScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                AssessmentJobVO job = assessmentService.get(userId, jobId);
+                emitter.send(SseEmitter.event().name("assessment").data(job));
+                if (LegalConstants.JOB_COMPLETED.equals(job.getStatus())
+                        || LegalConstants.JOB_FAILED.equals(job.getStatus())) {
+                    cleanup.run();
+                    emitter.complete();
+                }
+            } catch (RuntimeException ex) {
+                cleanup.run();
+                emitter.completeWithError(ex);
+            } catch (java.io.IOException ex) {
+                cleanup.run();
+                emitter.completeWithError(ex);
+            }
+        }, 0L, 500L, TimeUnit.MILLISECONDS);
+        futureRef.set(future);
     }
 
     @Override
