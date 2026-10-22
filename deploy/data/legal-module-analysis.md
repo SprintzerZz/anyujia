@@ -1092,7 +1092,7 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 
 ### 11.0.26 本轮第二十七阶段：增加压测过程实时资源采样
 
-为避免只看压测结束时的 active/pending 和容器资源，本阶段新增 `deploy/perf/legal-gateway-resource-sampler.ps1`，以 1 秒间隔采集：
+为避免只看压测结束时的 active/pending 和容器资源，本阶段新增 `deploy/perf/legal-gateway-resource-sampler.ps1`，按 1 秒目标间隔采集：
 
 - `reactor.netty.connection.provider.active.connections`
 - `reactor.netty.connection.provider.pending.connections`
@@ -1103,7 +1103,7 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 
 ### 11.0.27 本轮第二十八阶段：实时采样确认连接池 pending 队列为主要瓶颈
 
-使用新增实时采样器执行 300 req/s、持续 30 秒的 Gateway → Legal 入队压测，采样间隔 1 秒。该轮不是容量承诺，而是用于捕获高峰期间的连接池和容器资源状态。
+使用新增实时采样器执行 300 req/s、持续 30 秒的 Gateway → Legal 入队压测。由于 Windows 下 Actuator 和 `docker stats` 当前按串行方式采集，实际样本间隔约 4–7 秒；该轮不是容量承诺，而是用于捕获高峰期间的连接池和容器资源状态。
 
 #### 压测结果
 
@@ -1127,6 +1127,7 @@ Actuator 已实际返回以下连接池指标，并带有 `name=gateway`、`remo
 
 - `active.connections=256` 证明显式最大连接数已经生效；同时 `pending.connections=378` 证明下游变慢时请求仍在连接池获取队列中等待。
 - `gateway.forward.active=669` 与连接池 pending 同时升高，说明 Gateway 转发并发和连接获取排队是本轮长尾及失败率上升的直接证据。
+- 当前采样器已捕获到压力窗口中的高峰值，但样本间隔不是严格 1 秒；后续可将指标请求并行化，提升峰值采样精度。
 - 当前 Spring Cloud Gateway 的 fixed pool 构造链路将 `pendingAcquireMaxCount` 固定为 `-1`，因此现有 YAML 只能限制单个请求等待时长，不能限制等待队列长度。
 - 下一步应实现自定义 `HttpClientFactory/ConnectionProvider`，显式设置 `pendingAcquireMaxCount`，并在超过队列上限时快速失败；随后重新压测验证 Gateway CPU、内存和 Legal 入队失败率是否下降。
 
