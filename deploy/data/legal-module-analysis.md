@@ -767,6 +767,46 @@ event-publish-pool   结果事件发布
 
 原始结果：`deploy/perf/results/legal-agent-enqueue-instrumented-final-2026-10-22.json`。下一步应采集 JVM 线程池、Tomcat 工作线程、Hikari 活跃连接/等待线程和 MySQL 慢查询，继续确认 Controller 外围排队的具体来源。
 
+### 11.0.14 本轮第十五阶段：运行时资源观测与数据库快照
+
+本阶段补齐 Legal 异步线程池的运行时指标，并检查数据库当前资源状态，为下一轮压测期间采样做准备。
+
+#### 新增运行时指标
+
+Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基数 Gauge：
+
+- `legal.executor.active{executor=...}`：当前活跃线程数。
+- `legal.executor.pool.size{executor=...}`：当前线程池线程数。
+- `legal.executor.queue.size{executor=...}`：当前排队任务数。
+- `legal.executor.queue.remaining{executor=...}`：队列剩余容量。
+
+同时保留 Spring Boot Actuator 的 Tomcat、Hikari 指标入口，压测时可读取请求线程、数据库连接池活跃连接及等待线程，和上一阶段的入队分段 Timer 对齐。
+
+#### MySQL 当前快照
+
+本次采样发生在压测容器已停止后的空闲状态，仅用于确认环境基线，不能作为高并发容量结论：
+
+| 指标 | 当前值 |
+| --- | ---: |
+| Threads_connected | 40 |
+| Threads_running | 2 |
+| Threads_created | 71 |
+| Threads_cached | 25 |
+| Slow_queries | 3 |
+| Queries | 2,031,633 |
+| max_connections | 2,000 |
+| slow_query_log | OFF |
+| long_query_time | 10 s |
+
+空闲快照显示当前没有明显的 MySQL 执行堆积，但由于慢查询日志关闭且采样不在压力窗口内，不能据此排除压测期间的连接等待或锁等待。下一轮应在压力运行期间同步读取 `hikaricp.*`、`tomcat.*`、`legal.executor.*` 和 MySQL `Threads_running`，并使用临时、隔离的开发环境慢查询配置或 Performance Schema 采样，避免修改生产数据库全局配置。
+
+#### 本阶段验证
+
+- Legal 模块构建成功。
+- Legal 定向测试 5 个通过，失败数 0。
+- 线程池指标代码已随 Legal JAR 编译进入运行版本。
+- 本阶段未将空闲数据库快照包装为压测结果；下一步是“资源指标与 500 req/s 入队压测同窗采集”，定位 Controller 外围排队究竟来自 Tomcat、Hikari 还是数据库执行。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
