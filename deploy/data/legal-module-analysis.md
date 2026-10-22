@@ -807,6 +807,40 @@ Legal 的 assessment、agent、sse-writer 三个线程池均暴露以下低基�
 - 线程池指标代码已随 Legal JAR 编译进入运行版本。
 - 本阶段未将空闲数据库快照包装为压测结果；下一步是“资源指标与 500 req/s 入队压测同窗采集”，定位 Controller 外围排队究竟来自 Tomcat、Hikari 还是数据库执行。
 
+### 11.0.15 本轮第十六阶段：资源指标与 500 req/s 同窗压测
+
+本阶段使用最新 Legal/Gateway JAR、有效租户 Token 和有效聊天会话，通过 Gateway 执行 `SCENARIO=enqueue`，目标 500 req/s，持续 30 秒；同时每 2 秒采集 Legal 线程池、Hikari 和 MySQL 状态。
+
+#### 压测结果
+
+| 指标 | 实测结果 |
+| --- | ---: |
+| 入队请求样本 | 4,139 |
+| HTTP 200 | 3,712 |
+| HTTP 500 | 412 |
+| 无状态响应/连接异常 | 15 |
+| dropped iterations | 10,862 |
+| 入队平均耗时 | 14.75 s |
+| 入队 P50 | 14.80 s |
+| 入队 P95 | 21.65 s |
+| 入队 P99 | 24.17 s |
+| 最大耗时 | 27.69 s |
+
+该结果仍未达到 500 req/s 的稳定有效吞吐，不能作为产品容量结论；但本轮资源采样已经足够定位主要瓶颈。
+
+#### 资源证据与瓶颈归因
+
+- Hikari `connections.active` 达到连接池上限 10。
+- Hikari `connections.pending` 峰值 171，说明请求大量等待数据库连接。
+- 压测结束后 `hikaricp.connections.timeout` 累计为 421。
+- MySQL `Threads_running` 压测窗口内约为 3–14，未出现等同于请求并发量的执行线程堆积；当前 `Slow_queries` 仍为 3，但慢查询日志处于关闭状态，不能用它证明没有锁等待。
+- Legal `assessment`、`agent`、`sse-writer` 线程池队列采样保持 0，说明本轮瓶颈不是 Agent 异步线程池或 SSE 写线程池。
+- 分段 Timer：Controller 约 1.47 s/次，task insert 约 24.57 ms/次，Outbox insert 约 15.13 ms/次，Service 约 40.46 ms/次。Controller 与业务分段的差值与 Hikari 等待及请求外围排队一致。
+
+结论：当前 P0 主瓶颈已从“可能的 Controller/容器排队”收敛为“同步入队链路受 Hikari 连接池耗尽影响”。下一阶段应优先做数据库写入背压/连接获取策略和任务入队链路解耦验证，再比较连接池 10、15、20 的有效吞吐、超时率和 P95；不能仅扩大业务线程池。
+
+原始压测结果：`deploy/perf/results/legal-agent-resource-sampled-2026-10-22.json`。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

@@ -116,12 +116,12 @@ public class LegalAsyncConfig {
     private void registerExecutorMetrics(String name, ThreadPoolTaskExecutor executor) {
         ThreadPoolExecutor pool = executor.getThreadPoolExecutor();
         Gauge.builder("legal.executor.active", pool, ThreadPoolExecutor::getActiveCount)
-                .tag("executor", name).register(meterRegistry);
+                .tag("executor", name).strongReference(true).register(meterRegistry);
         Gauge.builder("legal.executor.pool.size", pool, ThreadPoolExecutor::getPoolSize)
-                .tag("executor", name).register(meterRegistry);
+                .tag("executor", name).strongReference(true).register(meterRegistry);
         Gauge.builder("legal.executor.queue.size", pool, value -> value.getQueue().size())
-                .tag("executor", name).register(meterRegistry);
+                .tag("executor", name).strongReference(true).register(meterRegistry);
         Gauge.builder("legal.executor.queue.remaining", pool, value -> value.getQueue().remainingCapacity())
-                .tag("executor", name).register(meterRegistry);
+                .tag("executor", name).strongReference(true).register(meterRegistry);
     }
 }
