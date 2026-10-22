@@ -631,6 +631,34 @@ event-publish-pool   结果事件发布
 
 本轮已达到建连 P95/P99 验收目标，证明上一轮瓶颈主要是首个 SSE 数据帧发送时机，而不是连接数信号量或 writer pool 容量。原始复测数据：`deploy/perf/results/legal-agent-sse-scale-ready-2026-10-22.json`。Gateway 仍需在 Nacos gRPC 9848 恢复后补测。
 
+### 11.0.9 本轮第十阶段：Gateway 鉴权与 SSE 完整链路冒烟
+
+本阶段补齐并验证了本地完整链路：`租户 Token -> Gateway AuthFilter -> Nacos 服务发现 -> Legal Agent -> SSE`。
+
+#### 环境修复
+
+- Nacos 启动失败根因是 Compose 默认账号 `anyujiadev` 与本地 MySQL 运行账号不一致，已按仓库运行时修复配置切换为 `appdev`。
+- Nacos 重建时因 Compose 项目名变化接入了错误网络，已将其接入实际运行的 `frameworkjava_frameworkjava_network`。
+- 已确认 Nacos HTTP 8848 与 gRPC 9848 均可用，Legal 服务成功注册为 `anyujia-legal`，Gateway 成功注册为 `anyujia-gateway`。
+- 本地 Nacos 数据库原先没有 `frameworkjava-dev` 命名空间和 Gateway 配置，本阶段补充了仅用于开发验证的命名空间及 `/legal/** -> lb://anyujia-legal` 路由。
+
+#### 完整链路结果
+
+使用临时真实格式开发 Token 写入 Redis `login:token:<token>`，Token 仅用于本次验证，完成后已删除；租户身份为 `userId=900001,userType=1,userFrom=app`。
+
+| 验证项 | 实测结果 |
+| --- | ---: |
+| Gateway 端口 | 18080，启动成功 |
+| Nacos gRPC | 9848 连接成功 |
+| Gateway 鉴权 | 通过 |
+| Legal 任务提交 | HTTP 200，任务 ID `2113179781457973249` |
+| Gateway 转发到 Legal | 通过 |
+| SSE 响应类型 | `text/event-stream` |
+| SSE 首事件 | `event:connected / data:ok` |
+| 任务终态事件 | 收到 `event:failed`，原因为测试会话不存在，链路本身正常返回 |
+
+本阶段证明此前的 Gateway 失败来自本地基础设施配置，而不是 Agent SSE 实现。测试任务、Outbox、事件和 Token 均已清理；临时 Gateway/Legal 容器已移除，Nacos 保留为已修复状态。下一阶段应在已准备的真实租户测试数据和有效会话上下文下，通过 Gateway 重跑高并发入队、SSE 长连接及任务恢复压测，并记录 Gateway 额外耗时。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
