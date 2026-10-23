@@ -27,6 +27,7 @@ public class LegalAgentTask {
     private String contextStatus;
     private Boolean contextConflict;
     private Boolean reviewRequired;
+    private String replayFromStage;
     private String evidenceManifestJson;
     private Integer chatDeliveryState;
     private LocalDateTime chatDeliveryClaimedAt;

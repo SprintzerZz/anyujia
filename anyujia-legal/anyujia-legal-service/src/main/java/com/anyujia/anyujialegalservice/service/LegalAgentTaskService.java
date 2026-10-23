@@ -111,10 +111,12 @@ public class LegalAgentTaskService {
             request.setQuery(task.getQueryText());
             request.setRegionCode(task.getRegionCode());
             request.setAsOfDate(task.getAsOfDate().toString());
-            checkpointService.start(taskId, "CONTEXT_AND_EVIDENCE", task.getRequestId());
+            String stage = task.getReplayFromStage() == null || task.getReplayFromStage().isBlank()
+                    ? "CONTEXT_AND_EVIDENCE" : task.getReplayFromStage();
+            checkpointService.start(taskId, stage, task.getRequestId());
             LegalAgentAnswerVO answer = telemetry.stage("context-and-answer", taskId,
                     () -> agentService.answer(task.getTenantId(), request));
-            checkpointService.success(taskId, "CONTEXT_AND_EVIDENCE", objectMapper.writeValueAsString(
+            checkpointService.success(taskId, stage, objectMapper.writeValueAsString(
                     java.util.Map.of("contextStatus", answer.getContextStatus(),
                             "contextConflict", answer.isContextConflict())));
             String answerJson = objectMapper.writeValueAsString(answer);
@@ -148,7 +150,8 @@ public class LegalAgentTaskService {
                 answerDeliveryService.schedule(taskId);
             }
         } catch (Exception ex) {
-            checkpointService.failure(taskId, "CONTEXT_AND_EVIDENCE", ex);
+            checkpointService.failure(taskId, task.getReplayFromStage() == null
+                    ? "CONTEXT_AND_EVIDENCE" : task.getReplayFromStage(), ex);
             log.error("Legal Agent task failed, taskId={}", taskId, ex);
             String error = boundedError(ex);
             if (taskMapper.fail(taskId, workerId, error) > 0) {
@@ -163,13 +166,18 @@ public class LegalAgentTaskService {
     }
 
     @Transactional
-    public void replay(Long tenantId, Long taskId) {
+    public void replay(Long tenantId, Long taskId, String stage) {
         LegalAgentTask task = taskMapper.selectOne(new LambdaQueryWrapper<LegalAgentTask>()
                 .eq(LegalAgentTask::getId, taskId).eq(LegalAgentTask::getTenantId, tenantId));
         if (task == null) {
             throw new ServiceException("法律助手任务不存在或无权访问", ResultCode.TOKEN_CHECK_FAILED.getCode());
         }
-        if (taskMapper.replay(taskId) == 0) {
+        String replayStage = stage == null || stage.isBlank() ? "CONTEXT_AND_EVIDENCE" : stage;
+        if (!"CONTEXT_AND_EVIDENCE".equals(replayStage)) {
+            throw new ServiceException("暂不支持从该阶段重放: " + replayStage, ResultCode.ERROR.getCode());
+        }
+        checkpointService.resetForReplay(taskId, replayStage);
+        if (taskMapper.replay(taskId, replayStage) == 0) {
             throw new ServiceException("仅失败任务允许重放", ResultCode.ERROR.getCode());
         }
         LegalAgentTaskOutbox outbox = new LegalAgentTaskOutbox();

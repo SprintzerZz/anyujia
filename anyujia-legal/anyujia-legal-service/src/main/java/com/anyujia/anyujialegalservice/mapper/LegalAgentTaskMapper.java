@@ -12,7 +12,7 @@ public interface LegalAgentTaskMapper extends BaseMapper<LegalAgentTask> {
     int claim(@Param("taskId") Long taskId, @Param("workerId") String workerId,
               @Param("leaseUntil") java.time.LocalDateTime leaseUntil);
 
-    @Update("UPDATE legal_agent_task SET status='COMPLETED', answer_json=#{answerJson}, "
+    @Update("UPDATE legal_agent_task SET status='COMPLETED', replay_from_stage=NULL, answer_json=#{answerJson}, "
             + "context_hash=#{contextHash}, context_status=#{contextStatus}, "
             + "context_conflict=#{contextConflict}, "
             + "evidence_manifest_json=#{evidenceManifestJson}, "
@@ -41,10 +41,10 @@ public interface LegalAgentTaskMapper extends BaseMapper<LegalAgentTask> {
                       @Param("contextStatus") String contextStatus, @Param("contextConflict") boolean contextConflict,
                       @Param("evidenceManifestJson") String evidenceManifestJson);
 
-    @Update("UPDATE legal_agent_task SET status='PENDING', review_required=0, error_message=NULL, "
+    @Update("UPDATE legal_agent_task SET status='PENDING', review_required=0, replay_from_stage=#{stage}, error_message=NULL, "
             + "lease_owner=NULL, lease_until=NULL, updated_at=CURRENT_TIMESTAMP(3) "
             + "WHERE id=#{taskId} AND status='FAILED'")
-    int replay(@Param("taskId") Long taskId);
+    int replay(@Param("taskId") Long taskId, @Param("stage") String stage);
 
     @Update("UPDATE legal_agent_task SET status='COMPLETED', review_required=0, completed_at=CURRENT_TIMESTAMP(3), "
             + "updated_at=CURRENT_TIMESTAMP(3) WHERE id=#{taskId} AND status='WAITING_REVIEW'")

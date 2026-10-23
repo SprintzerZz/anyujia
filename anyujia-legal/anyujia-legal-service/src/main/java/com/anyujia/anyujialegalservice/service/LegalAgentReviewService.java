@@ -9,10 +9,12 @@ import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class LegalAgentReviewService {
+    private static final long REVIEW_LEASE_MINUTES = 15L;
     private final LegalAgentReviewMapper reviewMapper;
     private final LegalAgentTaskMapper taskMapper;
     private final LegalAgentTaskEventService eventService;
@@ -35,6 +37,9 @@ public class LegalAgentReviewService {
         review.setReviewedAt(null);
         review.setReviewerId(null);
         review.setReviewerComment(null);
+        review.setAttemptCount(review.getAttemptCount() == null ? 0 : review.getAttemptCount());
+        review.setLeaseOwner(null);
+        review.setLeaseUntil(null);
         review.setUpdatedAt(LocalDateTime.now());
         if (review.getId() == null) {
             reviewMapper.insert(review);
@@ -45,8 +50,30 @@ public class LegalAgentReviewService {
     }
 
     @Transactional
+    public Optional<LegalAgentReview> claimNext(Long reviewerId) {
+        String reviewer = String.valueOf(reviewerId);
+        LegalAgentReview candidate = reviewMapper.selectOne(new LambdaQueryWrapper<LegalAgentReview>()
+                .eq(LegalAgentReview::getStatus, "PENDING")
+                .orderByAsc(LegalAgentReview::getCreatedAt)
+                .last("LIMIT 1"));
+        if (candidate == null || reviewMapper.claim(candidate.getId(), reviewer,
+                LocalDateTime.now().plusMinutes(REVIEW_LEASE_MINUTES)) == 0) {
+            return Optional.empty();
+        }
+        candidate.setStatus("CLAIMED");
+        candidate.setLeaseOwner(reviewer);
+        candidate.setLeaseUntil(LocalDateTime.now().plusMinutes(REVIEW_LEASE_MINUTES));
+        return Optional.of(candidate);
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${legal.agent.review-recovery-delay-millis:30000}")
+    public void reclaimExpired() {
+        reviewMapper.reclaimExpired(LocalDateTime.now());
+    }
+
+    @Transactional
     public void approve(Long taskId, Long reviewerId, String comment) {
-        LegalAgentReview review = pending(taskId);
+        LegalAgentReview review = claimed(taskId, reviewerId);
         if (taskMapper.approveReview(taskId) == 0) {
             throw new IllegalStateException("法律助手任务当前不可审核通过");
         }
@@ -62,7 +89,7 @@ public class LegalAgentReviewService {
 
     @Transactional
     public void reject(Long taskId, Long reviewerId, String comment) {
-        LegalAgentReview review = pending(taskId);
+        LegalAgentReview review = claimed(taskId, reviewerId);
         if (taskMapper.rejectReview(taskId, comment == null ? "人工审核未通过" : comment) == 0) {
             throw new IllegalStateException("法律助手任务当前不可审核拒绝");
         }
@@ -75,12 +102,13 @@ public class LegalAgentReviewService {
         eventService.append(taskId, review.getTenantId(), "failed", comment == null ? "人工审核未通过" : comment);
     }
 
-    private LegalAgentReview pending(Long taskId) {
+    private LegalAgentReview claimed(Long taskId, Long reviewerId) {
         LegalAgentReview review = reviewMapper.selectOne(new LambdaQueryWrapper<LegalAgentReview>()
                 .eq(LegalAgentReview::getTaskId, taskId)
-                .eq(LegalAgentReview::getStatus, "PENDING"));
-        if (review == null) {
-            throw new IllegalStateException("待审核记录不存在");
+                .eq(LegalAgentReview::getStatus, "CLAIMED")
+                .eq(LegalAgentReview::getLeaseOwner, String.valueOf(reviewerId)));
+        if (review == null || review.getLeaseUntil() == null || review.getLeaseUntil().isBefore(LocalDateTime.now())) {
+            throw new IllegalStateException("审核记录不存在、未领取或租约已过期");
         }
         return review;
     }

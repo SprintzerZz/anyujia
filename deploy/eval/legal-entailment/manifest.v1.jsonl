@@ -1,0 +1,8 @@
+{"id":"rent-001","premise":"租赁期限届满，承租人应当返还租赁物。","hypothesis":"合同到期后，租客原则上应返还房屋。","label":"ENTAILMENT","risk_level":"LOW","source":"synthetic-civil-code"}
+{"id":"deposit-001","premise":"出租人无正当理由不得扣留承租人的押金。","hypothesis":"房东可以因为租客提出投诉而直接没收全部押金。","label":"CONTRADICTION","risk_level":"HIGH","source":"synthetic-rental-rule"}
+{"id":"deposit-002","premise":"押金是否退还还需要结合合同约定、房屋损耗和实际损失判断。","hypothesis":"只要合同写了不退押金，该约定就必然有效。","label":"UNKNOWN","risk_level":"HIGH","source":"synthetic-rental-rule"}
+{"id":"repair-001","premise":"因承租人使用不当造成租赁物损坏的，承租人可能承担维修或赔偿责任。","hypothesis":"租客造成房屋损坏时，可能需要承担相应维修或赔偿责任。","label":"ENTAILMENT","risk_level":"MEDIUM","source":"synthetic-civil-code"}
+{"id":"repair-002","premise":"自然损耗不属于承租人故意或过失造成的损坏。","hypothesis":"所有家具的自然折旧都可以按全新价格向租客索赔。","label":"CONTRADICTION","risk_level":"HIGH","source":"synthetic-rental-rule"}
+{"id":"entry-001","premise":"出租人进入承租人占有的房屋，应当遵守法律和合同约定，不得任意侵扰。","hypothesis":"房东可以不通知租客，随时进入房屋检查。","label":"CONTRADICTION","risk_level":"HIGH","source":"synthetic-rental-rule"}
+{"id":"fee-001","premise":"合同未明确约定的费用是否应由承租人承担，需要结合实际服务、约定和法律规定判断。","hypothesis":"合同没有写清楚的费用，租客一定无需支付。","label":"UNKNOWN","risk_level":"MEDIUM","source":"synthetic-rental-rule"}
+{"id":"notice-001","premise":"租客应当按照约定及时支付租金。","hypothesis":"租客可以在任何情况下无限期拖欠租金而不承担后果。","label":"CONTRADICTION","risk_level":"HIGH","source":"synthetic-civil-code"}

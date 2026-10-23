@@ -61,6 +61,7 @@ import com.anyujia.anyujialegalapi.domain.dto.LegalAgentReviewReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentTaskVO;
+import com.anyujia.anyujialegalapi.domain.vo.LegalAgentReviewVO;
 
 @RestController
 @RequestMapping("/legal")
@@ -206,9 +207,10 @@ public class LegalController implements LegalFeignClient {
     public ApiResult<Void> replayAgentTask(@RequestHeader("userId") Long userId,
                                            @RequestHeader("userType") Integer userType,
                                            @RequestHeader("userFrom") String userFrom,
+                                           @RequestParam(value = "stage", required = false) String stage,
                                            @PathVariable("taskId") Long taskId) {
         requireTenant(userType, userFrom);
-        legalAgentTaskService.replay(userId, taskId);
+        legalAgentTaskService.replay(userId, taskId, stage);
         return ApiResult.success();
     }
 
@@ -220,6 +222,26 @@ public class LegalController implements LegalFeignClient {
         requireInternal(userFrom);
         legalAgentReviewService.approve(taskId, reviewerId, request.getComment());
         return ApiResult.success();
+    }
+
+    @PostMapping("/agent/reviews/claim")
+    public ApiResult<LegalAgentReviewVO> claimAgentReview(@RequestHeader("userId") Long reviewerId,
+                                                         @RequestHeader("userFrom") String userFrom) {
+        requireInternal(userFrom);
+        return ApiResult.success(legalAgentReviewService.claimNext(reviewerId)
+                .map(review -> {
+                    LegalAgentReviewVO result = new LegalAgentReviewVO();
+                    result.setReviewId(review.getId());
+                    result.setTaskId(review.getTaskId());
+                    result.setStatus(review.getStatus());
+                    result.setReason(review.getReason());
+                    result.setSupportScore(review.getSupportScore());
+                    result.setAttemptCount(review.getAttemptCount());
+                    result.setLeaseOwner(review.getLeaseOwner());
+                    result.setLeaseUntil(review.getLeaseUntil());
+                    result.setAnswerJson(review.getAnswerJson());
+                    return result;
+                }).orElse(null));
     }
 
     @PostMapping("/agent/tasks/{taskId}/review/reject")

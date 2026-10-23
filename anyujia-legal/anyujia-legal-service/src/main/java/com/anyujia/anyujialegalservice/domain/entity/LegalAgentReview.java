@@ -19,6 +19,9 @@ public class LegalAgentReview {
     private Long reviewerId;
     private String reviewerComment;
     private String answerJson;
+    private Integer attemptCount;
+    private String leaseOwner;
+    private LocalDateTime leaseUntil;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime reviewedAt;

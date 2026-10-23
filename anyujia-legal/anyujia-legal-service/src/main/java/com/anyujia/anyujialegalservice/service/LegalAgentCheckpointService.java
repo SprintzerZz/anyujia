@@ -54,6 +54,22 @@ public class LegalAgentCheckpointService {
         update(taskId, stage, "FAILED", null, message.substring(0, Math.min(1000, message.length())));
     }
 
+    public void resetForReplay(Long taskId, String stage) {
+        LegalAgentStageCheckpoint checkpoint = mapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<LegalAgentStageCheckpoint>()
+                        .eq(LegalAgentStageCheckpoint::getTaskId, taskId)
+                        .eq(LegalAgentStageCheckpoint::getStage, stage));
+        if (checkpoint == null) {
+            return;
+        }
+        checkpoint.setStatus("PENDING");
+        checkpoint.setOutputJson(null);
+        checkpoint.setErrorMessage(null);
+        checkpoint.setCompletedAt(null);
+        checkpoint.setUpdatedAt(LocalDateTime.now());
+        mapper.updateById(checkpoint);
+    }
+
     private void update(Long taskId, String stage, String status, String outputJson, String errorMessage) {
         try {
             LegalAgentStageCheckpoint checkpoint = mapper.selectOne(

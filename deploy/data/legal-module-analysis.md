@@ -1648,6 +1648,27 @@ Git 状态：本轮新增了开发验证用离线 Dockerfile、当前 House sche
 - 人工审核队列已落库并有状态门禁，但还缺少审核列表、超时升级、多人抢占租约和审核审计报表。
 - 支持度评估当前是可审计的确定性词面基线，不能替代法律专家语义判断；生产验收仍需接入人工标注集、法规条文级 entailment 评估，并把阈值按风险等级配置。
 
+### 11.0.50 本轮 P0/P1 延伸：阶段级 replay、审核租约与法律 entailment 评估
+
+本轮继续补齐前一阶段暴露的生产边界：
+
+1. **阶段级 replay**：新增 `replay_from_stage` 和 `POST /legal/agent/tasks/{taskId}/replay?stage=...`，任务恢复时先将指定 checkpoint 重置为 `PENDING`，再原子恢复任务和 Outbox；当前已开放 `CONTEXT_AND_EVIDENCE` 阶段，后续新增阶段只需注册白名单和对应输入快照。
+2. **审核队列租约**：`legal_agent_review` 新增 `attempt_count/lease_owner/lease_until`；内部审核人通过 `/legal/agent/reviews/claim` 原子领取最早待审核记录，审核通过/拒绝必须匹配未过期租约，定时任务会把过期 `CLAIMED` 记录重新放回队列，避免多审核人重复处理。
+3. **人工标注集**：新增 `deploy/eval/legal-entailment/manifest.v1.jsonl`，覆盖押金、维修、自然损耗、入户、费用和租金等 `ENTAILMENT/CONTRADICTION/UNKNOWN` 标签，并保留风险等级和来源字段，支持后续人工复核、版本化和分层统计。
+4. **语义级法律 entailment 评估器**：新增 `evaluate.py`，可选 `sentence-transformers` 多语言向量模型；未安装模型时只运行可审计的字符 n-gram 基线，不把基线结果冒充法律语义能力。当前 8 条合成样本的基线准确率为 25%，说明必须使用标注数据训练/校准语义模型后再做生产验收。
+
+#### 验证结果
+
+- Java 17 Legal 聚合编译通过。
+- Legal Agent 一致性、Controller 鉴权和 entailment 评估定向测试通过。
+- Docker 开发库已执行 V38，确认 `replay_from_stage`、审核租约字段和索引存在。
+- 工作流约束为：未领取审核记录不能直接通过/拒绝；租约过期后自动回队列；replay 保留原 taskId 和 checkpoint 尝试次数。
+
+#### 当前边界
+
+- 当前 Agent 仍只有 `CONTEXT_AND_EVIDENCE` 一个可执行阶段，阶段级接口和数据结构已准备好，但合同解析、聊天压缩、RAG、生成、发布仍需逐步拆成独立 checkpoint。
+- entailment 评估器目前是离线质量门禁，不自动改变线上回答；生产接入前需要律师标注集、模型版本锁定、阈值校准、混淆矩阵和高风险样本强制人工审核。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
