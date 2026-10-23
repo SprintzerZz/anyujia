@@ -3,6 +3,9 @@ package com.anyujia.anyujiacommonredis.service;
 import com.anyujia.anyujiacommoncore.utils.JsonUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.serializer.GenericToStringSerializer;
+import org.springframework.data.redis.serializer.RedisSerializer;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -25,6 +28,15 @@ import java.util.concurrent.TimeUnit;
  */
 @SuppressWarnings({"unchecked", "rawtypes"})
 public class RedisService {
+
+    private static final DefaultRedisScript<Long> HASH_SET_IF_PREFIX_SCRIPT = new DefaultRedisScript<>(
+            "local current = redis.call('HGET', KEYS[1], ARGV[1]); "
+                    + "if not current or string.sub(current, 1, string.len(ARGV[2])) == ARGV[2] then "
+                    + "redis.call('HSET', KEYS[1], ARGV[1], ARGV[3]); return 1; end; return 0", Long.class);
+    private static final DefaultRedisScript<Long> HASH_DELETE_IF_PREFIX_SCRIPT = new DefaultRedisScript<>(
+            "local value = redis.call('HGET', KEYS[1], ARGV[1]); "
+                    + "if value and string.sub(value, 1, string.len(ARGV[2])) == ARGV[2] then "
+                    + "return redis.call('HDEL', KEYS[1], ARGV[1]); end; return 0", Long.class);
 
     /**
      * Redis 操作模板。
@@ -537,6 +549,25 @@ public class RedisService {
     }
 
     /**
+     * Updates a hash field only if it is absent or still owned by the same
+     * connection prefix. The compare-and-set is atomic in Redis.
+     */
+    public boolean setCacheMapValueIfValueStartsWith(
+            final String key, final String hKey, final String valuePrefix, final String value) {
+        Long result = redisTemplate.execute(
+                HASH_SET_IF_PREFIX_SCRIPT,
+                new PresenceScriptArgumentSerializer(
+                        redisTemplate.getHashKeySerializer(), redisTemplate.getHashValueSerializer()),
+                new GenericToStringSerializer<>(Long.class),
+                Collections.singletonList(key),
+                hKey,
+                new SerializedHashValue(valuePrefix),
+                new SerializedHashValue(value));
+        return result != null && result > 0;
+    }
+
+
+    /**
      * 删除 Redis Hash 中的单个字段。
      *
      * @param key Redis 键
@@ -546,6 +577,52 @@ public class RedisService {
     public boolean deleteCacheMapValue(final String key, final String hKey) {
         Long count = redisTemplate.opsForHash().delete(key, hKey);
         return count != null && count > 0;
+    }
+
+    /**
+     * Deletes a hash field only while its serialized value starts with the
+     * supplied serialized prefix. The compare-and-delete is one Redis script,
+     * so an old connection cannot delete a newer connection's lease.
+     */
+    public boolean deleteCacheMapValueIfValueStartsWith(
+            final String key, final String hKey, final String valuePrefix) {
+        Long count = redisTemplate.execute(
+                HASH_DELETE_IF_PREFIX_SCRIPT,
+                new PresenceScriptArgumentSerializer(
+                        redisTemplate.getHashKeySerializer(), redisTemplate.getHashValueSerializer()),
+                new GenericToStringSerializer<>(Long.class),
+                Collections.singletonList(key),
+                hKey,
+                new SerializedHashValue(valuePrefix));
+        return count != null && count > 0;
+    }
+
+    private record SerializedHashValue(String value) {
+    }
+
+    private static final class PresenceScriptArgumentSerializer implements RedisSerializer<Object> {
+        private final RedisSerializer<Object> hashKeySerializer;
+        private final RedisSerializer<Object> hashValueSerializer;
+
+        @SuppressWarnings("unchecked")
+        private PresenceScriptArgumentSerializer(
+                RedisSerializer<?> hashKeySerializer, RedisSerializer<?> hashValueSerializer) {
+            this.hashKeySerializer = (RedisSerializer<Object>) hashKeySerializer;
+            this.hashValueSerializer = (RedisSerializer<Object>) hashValueSerializer;
+        }
+
+        @Override
+        public byte[] serialize(Object value) {
+            if (value instanceof SerializedHashValue hashValue) {
+                return hashValueSerializer.serialize(hashValue.value());
+            }
+            return hashKeySerializer.serialize(value);
+        }
+
+        @Override
+        public Object deserialize(byte[] bytes) {
+            return null;
+        }
     }
 
     /**

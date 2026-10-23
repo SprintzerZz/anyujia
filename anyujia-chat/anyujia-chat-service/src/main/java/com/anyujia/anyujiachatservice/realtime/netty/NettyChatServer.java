@@ -2,6 +2,8 @@ package com.anyujia.anyujiachatservice.realtime.netty;
 
 import com.anyujia.anyujiachatservice.realtime.ChatConnectionRegistry;
 import com.anyujia.anyujiachatservice.realtime.ChatFrameProcessor;
+import com.anyujia.anyujiachatservice.realtime.ChatWebSocketTicketService;
+import com.anyujia.anyujiacommondomain.domain.WebSocketTicketPrincipal;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -30,11 +32,15 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameAggregator;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import io.netty.handler.codec.http.HttpObjectAggregator;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
@@ -56,6 +62,7 @@ public class NettyChatServer implements SmartLifecycle {
 
     private final ChatConnectionRegistry registry;
     private final ChatFrameProcessor frameProcessor;
+    private final ChatWebSocketTicketService ticketService;
     private final int port;
     private final String bindHost;
     private final int workerThreads;
@@ -67,6 +74,7 @@ public class NettyChatServer implements SmartLifecycle {
     private final long timerTickMillis;
     private final int writeLowWaterMark;
     private final int writeHighWaterMark;
+    private final Set<String> allowedOrigins;
     private final ThreadPoolExecutor businessExecutor;
     private final ChannelGroup clientChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
     private volatile boolean running;
@@ -78,6 +86,7 @@ public class NettyChatServer implements SmartLifecycle {
     public NettyChatServer(
             ChatConnectionRegistry registry,
             ChatFrameProcessor frameProcessor,
+            ChatWebSocketTicketService ticketService,
             @Value("${chat.netty.bind-host:127.0.0.1}") String bindHost,
             @Value("${chat.netty.port:18084}") int port,
             @Value("${chat.netty.worker-threads:0}") int workerThreads,
@@ -90,9 +99,12 @@ public class NettyChatServer implements SmartLifecycle {
             @Value("${chat.websocket.idle-timeout-seconds:150}") long idleTimeoutSeconds,
             @Value("${chat.netty.timer-tick-millis:1000}") long timerTickMillis,
             @Value("${chat.netty.write-buffer-low-water-mark:32768}") int writeLowWaterMark,
-            @Value("${chat.netty.write-buffer-high-water-mark:65536}") int writeHighWaterMark) {
+            @Value("${chat.netty.write-buffer-high-water-mark:65536}") int writeHighWaterMark,
+            @Value("${chat.websocket.allowed-origins:http://localhost:5173,http://127.0.0.1:5173}")
+            String configuredAllowedOrigins) {
         this.registry = registry;
         this.frameProcessor = frameProcessor;
+        this.ticketService = ticketService;
         this.bindHost = bindHost;
         this.port = port;
         this.workerThreads = workerThreads;
@@ -104,6 +116,13 @@ public class NettyChatServer implements SmartLifecycle {
         this.timerTickMillis = timerTickMillis;
         this.writeLowWaterMark = writeLowWaterMark;
         this.writeHighWaterMark = writeHighWaterMark;
+        this.allowedOrigins = Arrays.stream(configuredAllowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .collect(Collectors.toUnmodifiableSet());
+        if (this.allowedOrigins.isEmpty() || this.allowedOrigins.contains("*")) {
+            throw new IllegalArgumentException("chat.websocket.allowed-origins must be explicit and non-wildcard");
+        }
         AtomicInteger threadNumber = new AtomicInteger();
         this.businessExecutor = new ThreadPoolExecutor(
                 businessThreads, businessThreads, 0, TimeUnit.MILLISECONDS,
@@ -202,22 +221,43 @@ public class NettyChatServer implements SmartLifecycle {
                 context.fireChannelRead(message);
                 return;
             }
-            String userId = request.headers().get("userId");
-            String userFrom = request.headers().get("userFrom");
-            try {
-                if (!"app".equals(userFrom)) {
-                    throw new IllegalArgumentException("invalid user source");
-                }
-                context.channel().attr(USER_ID).set(Long.valueOf(userId));
-                context.fireChannelRead(message);
-            } catch (RuntimeException ex) {
-                ReferenceCountUtil.release(message);
-                DefaultFullHttpResponse response = new DefaultFullHttpResponse(
-                        HttpVersion.HTTP_1_1, HttpResponseStatus.UNAUTHORIZED, Unpooled.EMPTY_BUFFER);
-                HttpUtil.setContentLength(response, 0);
-                response.headers().set(HttpHeaderNames.CONNECTION, "close");
-                context.writeAndFlush(response).addListener(ignored -> context.close());
+            String ticket = new QueryStringDecoder(request.uri()).parameters()
+                    .getOrDefault("ticket", java.util.List.of())
+                    .stream().findFirst().orElse(null);
+            String origin = request.headers().get(HttpHeaderNames.ORIGIN);
+            if (origin != null && !allowedOrigins.contains(origin)) {
+                rejectHandshake(context, message, HttpResponseStatus.FORBIDDEN);
+                return;
             }
+            if (ticket == null) {
+                rejectHandshake(context, message, HttpResponseStatus.UNAUTHORIZED);
+                return;
+            }
+            try {
+                businessExecutor.execute(() -> {
+                    WebSocketTicketPrincipal principal = ticketService.consume(ticket);
+                    context.executor().execute(() -> {
+                        if (principal == null) {
+                            rejectHandshake(context, message, HttpResponseStatus.UNAUTHORIZED);
+                            return;
+                        }
+                        context.channel().attr(USER_ID).set(Long.valueOf(principal.userId()));
+                        context.fireChannelRead(message);
+                    });
+                });
+            } catch (RejectedExecutionException ex) {
+                rejectHandshake(context, message, HttpResponseStatus.SERVICE_UNAVAILABLE);
+            }
+        }
+
+        private void rejectHandshake(ChannelHandlerContext context, Object message,
+                                     HttpResponseStatus status) {
+            ReferenceCountUtil.release(message);
+            DefaultFullHttpResponse response = new DefaultFullHttpResponse(
+                    HttpVersion.HTTP_1_1, status, Unpooled.EMPTY_BUFFER);
+            HttpUtil.setContentLength(response, 0);
+            response.headers().set(HttpHeaderNames.CONNECTION, "close");
+            context.writeAndFlush(response).addListener(ignored -> context.close());
         }
     }
 

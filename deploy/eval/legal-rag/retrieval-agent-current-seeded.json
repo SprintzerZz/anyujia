@@ -1,0 +1,550 @@
+{
+  "metadata": {
+    "generatedAt": "2026-10-22T04:29:23Z",
+    "runLabel": "agent-current-retrieval-seeded",
+    "gitSha": "fef10d44ad124b90b9b5b40408e244b079f07330",
+    "gitDirty": true,
+    "mode": "retrieval",
+    "endpoint": "http://127.0.0.1:18086",
+    "userFrom": "service",
+    "dataset": "deploy\\eval\\legal-rag\\cases.v1.jsonl",
+    "datasetSha256": "97da09018b73fd51ca2b30e5cac45d8ee705f6cff1adb5e08d5c7b3ad02013c0",
+    "evaluatorSha256": "c31316edab80b32a991c1840cad1f914fbcaf16899b2fc4b7d0218fa3e3ab67c",
+    "caseCount": 34,
+    "datasetVersions": {
+      "1.0.0": 34
+    },
+    "reviewStates": {
+      "source_verified": 34
+    },
+    "categories": {
+      "authority": 1,
+      "contract-basics": 1,
+      "custody": 1,
+      "damage": 3,
+      "decoration": 1,
+      "delivery": 1,
+      "deposit": 1,
+      "expiry": 1,
+      "ownership-change": 4,
+      "privacy": 1,
+      "registration": 2,
+      "remedy": 1,
+      "renewal": 1,
+      "rent": 2,
+      "repair": 2,
+      "safety": 1,
+      "subletting": 3,
+      "succession": 1,
+      "term": 1,
+      "termination": 3,
+      "third-party-claim": 1,
+      "use": 1
+    }
+  },
+  "summary": {
+    "caseCount": 34,
+    "recallAtK": 0.0,
+    "hitRateAtK": 0.0,
+    "mrr": 0.0,
+    "ndcgAtK": 0.0,
+    "latencyMillis": {
+      "mean": 65.58707941118936,
+      "p50": 53.159300001425436,
+      "p95": 114.73734999999576,
+      "p99": 201.76261199820166
+    }
+  },
+  "failureExamples": [
+    {
+      "id": "deposit-deduction",
+      "query": "房东可以用哪些理由扣我的押金，合同没有写的也能扣吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "landlord-entry",
+      "query": "房东说检查房屋就能随时自己开门进来，这合法吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "landlord-authority",
+      "query": "签约前我能要求房东提供房产证或有权出租的证明吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "repair-duty",
+      "query": "出租屋水管坏了，房东一直不修，我可以自己修并要求报销吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "normal-wear",
+      "query": "正常居住导致墙面和地板自然磨损，退租时我要赔吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "unauthorized-sublet",
+      "query": "我没经过房东同意把一间卧室转租给朋友，房东能解除合同吗？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "rent-arrears",
+      "query": "晚交一次房租，房东是不是马上就能解除租约？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    },
+    {
+      "id": "indefinite-lease-termination",
+      "query": "合同没写租多久，双方是不是都可以随时解除？",
+      "weakMetrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "deposit-deduction",
+      "query": "房东可以用哪些理由扣我的押金，合同没有写的也能扣吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 240.1196999999229
+      }
+    },
+    {
+      "id": "landlord-entry",
+      "query": "房东说检查房屋就能随时自己开门进来，这合法吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 123.88609999470646
+      }
+    },
+    {
+      "id": "landlord-authority",
+      "query": "签约前我能要求房东提供房产证或有权出租的证明吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 109.81110000284389
+      }
+    },
+    {
+      "id": "repair-duty",
+      "query": "出租屋水管坏了，房东一直不修，我可以自己修并要求报销吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 82.9412000020966
+      }
+    },
+    {
+      "id": "normal-wear",
+      "query": "正常居住导致墙面和地板自然磨损，退租时我要赔吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 78.2928000044194
+      }
+    },
+    {
+      "id": "unauthorized-sublet",
+      "query": "我没经过房东同意把一间卧室转租给朋友，房东能解除合同吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 51.49449999589706
+      }
+    },
+    {
+      "id": "rent-arrears",
+      "query": "晚交一次房租，房东是不是马上就能解除租约？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 52.58070000127191
+      }
+    },
+    {
+      "id": "indefinite-lease-termination",
+      "query": "合同没写租多久，双方是不是都可以随时解除？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 76.63060000049882
+      }
+    },
+    {
+      "id": "sale-does-not-break-lease",
+      "query": "租期内房东把房子卖了，新房主能让我立即搬走吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 89.76390000316314
+      }
+    },
+    {
+      "id": "unsafe-housing",
+      "query": "出租房燃气和消防不合格但房东催我入住，我该怎么办？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 80.24999999906868
+      }
+    },
+    {
+      "id": "filing-and-validity",
+      "query": "房东没给租赁合同备案，合同是不是就无效？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 47.68999999942025
+      }
+    },
+    {
+      "id": "deposit-dispute-remedy",
+      "query": "房东拒绝退押金，协商不成还能走什么途径？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 41.388799996639136
+      }
+    },
+    {
+      "id": "landlord-termination-notice",
+      "query": "房东依法解除租赁合同后，可以要求我当天立刻搬走吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 46.33289999765111
+      }
+    },
+    {
+      "id": "lease-contract-definition",
+      "query": "租房合同本质上约定的双方核心义务是什么？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 46.15429999830667
+      }
+    },
+    {
+      "id": "lease-term-over-20-years",
+      "query": "房东让我签25年租房合同，这25年都有效吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 52.2969000012381
+      }
+    },
+    {
+      "id": "unregistered-lease-validity",
+      "query": "房屋租赁合同没有办理登记备案，会影响合同效力吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 42.23490000003949
+      }
+    },
+    {
+      "id": "landlord-delivery-duty",
+      "query": "房东收了钱但迟迟不交房，法律上他有交付义务吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 34.570999996503815
+      }
+    },
+    {
+      "id": "tenant-use-method",
+      "query": "合同写明只能居住，我能把房子改成小工作室接待客户吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 53.94529999466613
+      }
+    },
+    {
+      "id": "misuse-damage-liability",
+      "query": "我擅自拆墙改造导致房屋损坏，房东能要求赔偿或解除合同吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 34.13640000508167
+      }
+    },
+    {
+      "id": "repair-duty-basic",
+      "query": "租房期间房屋设施自然老化坏了，默认是谁负责维修？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 59.41970000276342
+      }
+    },
+    {
+      "id": "tenant-keep-property",
+      "query": "我租房期间把门窗家具保管坏了，需要承担责任吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 37.70700000313809
+      }
+    },
+    {
+      "id": "decoration-consent",
+      "query": "我想装修出租屋或者加装固定设施，必须经过房东同意吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 51.49920000258135
+      }
+    },
+    {
+      "id": "sublease-with-consent",
+      "query": "如果房东同意我转租，原来的租房合同还有效吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 53.737900001578964
+      }
+    },
+    {
+      "id": "sublease-six-month-objection",
+      "query": "房东知道我转租但半年都没反对，现在还能说不同意解除吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 38.92269999778364
+      }
+    },
+    {
+      "id": "rent-payment-time",
+      "query": "合同没有写清楚房租什么时候交，应该怎么确定付款时间？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 35.701099994184915
+      }
+    },
+    {
+      "id": "third-party-claim",
+      "query": "有人主张房子不是房东的，影响我使用时我能少交租吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 65.30799999745796
+      }
+    },
+    {
+      "id": "non-tenant-reason-unusable",
+      "query": "不是我的原因导致房子不能住了，我能解除租赁合同吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 42.76979999849573
+      }
+    },
+    {
+      "id": "tenant-preemption-sale",
+      "query": "房东卖房时，我作为租客有没有优先购买权？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 56.22949999815319
+      }
+    },
+    {
+      "id": "auction-notice",
+      "query": "房东委托拍卖我租的房子，需要提前通知我吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 83.9648999972269
+      }
+    },
+    {
+      "id": "preemption-damages",
+      "query": "房东卖房没通知我，侵害我的优先购买权，我能主张赔偿吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 91.4619000031962
+      }
+    },
+    {
+      "id": "property-damage-rent-reduction",
+      "query": "暴雨导致出租屋部分损坏不能正常住，我能要求减租吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 52.044399999431334
+      }
+    },
+    {
+      "id": "tenant-death-cohabit-continue",
+      "query": "承租人去世后，原来一起住的家人还能继续租住吗？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 56.24049999460112
+      }
+    },
+    {
+      "id": "return-property-after-expiry",
+      "query": "租期结束退房时，房屋应该按什么状态返还？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 69.99930000165477
+      }
+    },
+    {
+      "id": "continued-use-renewal",
+      "query": "租期到了我继续住，房东也没反对，合同怎么算？",
+      "retrievedPassages": [],
+      "metrics": {
+        "recallAtK": 0.0,
+        "hitRateAtK": 0.0,
+        "mrr": 0.0,
+        "ndcgAtK": 0.0,
+        "latencyMillis": 50.43369999475544
+      }
+    }
+  ]
+}

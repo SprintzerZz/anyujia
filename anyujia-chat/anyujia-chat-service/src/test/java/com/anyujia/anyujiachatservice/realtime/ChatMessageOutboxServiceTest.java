@@ -12,6 +12,7 @@ import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
 import com.anyujia.anyujiachatservice.cache.RecentMessageCache;
 import com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache;
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
 import java.util.List;
@@ -26,7 +27,8 @@ class ChatMessageOutboxServiceTest {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ChatMessageOutboxService service = new ChatMessageOutboxService(
                 jdbcTemplate, new ObjectMapper(), mock(ChatMessagePublisher.class), mock(RecentMessageCache.class),
-                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class));
+                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class),
+                new ChatMessageShardRouter(32));
         ReflectionTestUtils.setField(service, "sentRetentionDays", 7);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 20_000);
         when(jdbcTemplate.update(anyString(), any(Timestamp.class), eq(10_000))).thenReturn(3);
@@ -43,14 +45,18 @@ class ChatMessageOutboxServiceTest {
         RecentMessageCache recentCache = mock(RecentMessageCache.class);
         ChatMessageOutboxService service = new ChatMessageOutboxService(
                 jdbcTemplate, new ObjectMapper(), publisher, recentCache,
-                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class));
+                mock(ChatUnreadService.class), mock(ChatConversationIndexCache.class),
+                new ChatMessageShardRouter(32));
         ReflectionTestUtils.setField(service, "batchSize", 1);
+        ReflectionTestUtils.setField(service, "workerThreads", 1);
+        service.init();
 
         MessageVO message = new MessageVO();
         message.setMessageId("100");
         message.setSessionId(9L);
         String payload = new ObjectMapper().writeValueAsString(message);
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), any(Timestamp.class), eq(1)))
+        when(jdbcTemplate.update(anyString(), anyString(), any(Timestamp.class), eq(1))).thenReturn(1);
+        when(jdbcTemplate.query(anyString(), any(RowMapper.class), anyString()))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     RowMapper<Object> rowMapper = (RowMapper<Object>) invocation.getArgument(1);
@@ -64,13 +70,14 @@ class ChatMessageOutboxServiceTest {
                     when(resultSet.getInt("retry_count")).thenReturn(0);
                     return List.of(rowMapper.mapRow(resultSet, 0));
                 });
-        when(jdbcTemplate.update(anyString(), eq(7L), any(Timestamp.class))).thenReturn(1);
-        when(jdbcTemplate.update(anyString(), eq(7L))).thenReturn(1);
+        try {
+            service.publishPending();
 
-        service.publishPending();
-
-        var order = inOrder(recentCache, publisher);
-        order.verify(recentCache).append(message);
-        order.verify(publisher).route(8L, message);
+            var order = inOrder(recentCache, publisher);
+            order.verify(recentCache).append(message);
+            order.verify(publisher).route(8L, message);
+        } finally {
+            service.shutdown();
+        }
     }
 }

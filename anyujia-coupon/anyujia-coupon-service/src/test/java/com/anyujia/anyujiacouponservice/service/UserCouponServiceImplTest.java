@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -67,6 +68,31 @@ class UserCouponServiceImplTest {
                 () -> service.receiveAsync(1L, CouponConstants.USER_TYPE_TENANT, 10L));
 
         verify(couponReceiveCacheService).rollback(10L, CouponConstants.USER_TYPE_TENANT, 1L);
+    }
+
+    @Test
+    void receiveAsyncFastFailsWhenRedisUnavailableWithoutDatabaseWarmup() {
+        when(couponReceiveCacheService.reserve(10L, CouponConstants.USER_TYPE_TENANT, 1L))
+                .thenReturn(CouponReceiveCacheService.ReserveResult.REDIS_UNAVAILABLE);
+
+        assertThrows(RuntimeException.class,
+                () -> service.receiveAsync(1L, CouponConstants.USER_TYPE_TENANT, 10L));
+
+        verify(templateMapper, never()).selectById(10L);
+        verify(couponRedeemProducer, never()).send(any(CouponRedeemEvent.class));
+    }
+
+    @Test
+    void receiveFastFailsWhenRedisUnavailableWithoutDatabaseWrite() {
+        when(couponReceiveCacheService.reserve(10L, CouponConstants.USER_TYPE_TENANT, 1L))
+                .thenReturn(CouponReceiveCacheService.ReserveResult.REDIS_UNAVAILABLE);
+
+        assertThrows(RuntimeException.class,
+                () -> service.receive(1L, CouponConstants.USER_TYPE_TENANT, 10L));
+
+        verify(templateMapper, never()).selectById(10L);
+        verify(templateMapper, never()).decrementStock(10L, CouponConstants.USER_TYPE_TENANT);
+        verify(userCouponMapper, never()).insert(any(UserCoupon.class));
     }
 
     @Test

@@ -29,6 +29,7 @@ import com.anyujia.anyujiachatservice.service.house.ChatHousePublishProvider;
 import com.anyujia.anyujiachatservice.service.profile.ChatUserProfileProvider;
 import com.anyujia.anyujiahouseapi.domain.vo.HousePublishConsultVO;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
+import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -116,10 +117,21 @@ public class ConversationServiceImpl implements ConversationService {
     @Transactional(rollbackFor = Exception.class)
     public ConversationCreateVO createAgentSession(Long userId, AgentSessionCreateReqDTO request) {
         requireCUser(userId);
+        ChatConversation sourceConversation = conversationMapper.selectById(request.getLandlordConversationId());
+        if (sourceConversation == null
+                || !Integer.valueOf(ChatConstants.CONVERSATION_ACTIVE).equals(sourceConversation.getStatus())
+                || !Integer.valueOf(ChatConstants.CONVERSATION_TYPE_LANDLORD_TENANT)
+                .equals(sourceConversation.getConversationType())
+                || !userId.equals(sourceConversation.getTenantUserId())) {
+            throw invalid("The landlord conversation is not accessible by this tenant");
+        }
+        memberService.requireMember(sourceConversation.getId(), userId);
         ChatConversation conversation = new ChatConversation();
         conversation.setId(IdWorker.getId());
         conversation.setTenantUserId(userId);
         conversation.setLandlordUserId(ChatConstants.AGENT_USER_ID);
+        conversation.setHouseId(sourceConversation.getHouseId());
+        conversation.setHousePublishId(sourceConversation.getHousePublishId());
         conversation.setConversationType(ChatConstants.CONVERSATION_TYPE_AGENT);
         conversation.setStatus(ChatConstants.CONVERSATION_ACTIVE);
         conversation.setCreatedAt(LocalDateTime.now());
@@ -256,7 +268,12 @@ public class ConversationServiceImpl implements ConversationService {
         bind.setChatConversationId(chatConversationId);
         bind.setLandlordConversationId(request.getLandlordConversationId());
         bind.setContractId(request.getContractId());
-        legalAgentFeignClient.bind("service", bind);
+        ApiResult<Void> result = legalAgentFeignClient.bind("service", bind);
+        if (result == null || result.getCode() != ResultCode.SUCCESS.getCode()) {
+            String message = result == null || result.getMsg() == null
+                    ? "Failed to bind legal agent conversation" : result.getMsg();
+            throw new ServiceException(message, ResultCode.ERROR.getCode());
+        }
     }
 
     private ConversationCreateVO toAgentCreateVO(ChatConversation conversation, Long userId) {

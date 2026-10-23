@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -24,5 +25,32 @@ public class ChatWebSocketTicketService {
                 AuthenticationConstants.WEBSOCKET_TICKET_TTL_SECONDS,
                 TimeUnit.SECONDS);
         return new WebSocketTicketVO(ticket, AuthenticationConstants.WEBSOCKET_TICKET_TTL_SECONDS);
+    }
+
+    /**
+     * Atomically consumes a ticket and validates the identity stored in it. The returned identity
+     * is the only source of truth for a WebSocket connection; client-supplied user headers are not
+     * trusted.
+     */
+    public WebSocketTicketPrincipal consume(String ticket) {
+        if (!StringUtils.hasText(ticket) || ticket.length() > 128) {
+            return null;
+        }
+        WebSocketTicketPrincipal principal = redisService.getAndDeleteCacheObject(
+                AuthenticationConstants.WEBSOCKET_TICKET_PREFIX + ticket,
+                WebSocketTicketPrincipal.class);
+        if (principal == null || !StringUtils.hasText(principal.userId())
+                || !StringUtils.hasText(principal.userFrom())
+                || !"app".equals(principal.userFrom())) {
+            return null;
+        }
+        try {
+            if (Long.parseLong(principal.userId()) <= 0) {
+                return null;
+            }
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+        return principal;
     }
 }

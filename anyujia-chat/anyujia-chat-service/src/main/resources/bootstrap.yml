@@ -42,23 +42,79 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,threadpool,chatPersistDlq
+        include: health,info,metrics,prometheus,threadpool,chatPersistDlq,chatDataSourcePools
+
+seata:
+  # Disabled by default so the single-database path is unchanged. Physical/gray
+  # rollout overrides SEATA_ENABLED=true and brings up a Seata TC alongside.
+  enabled: ${SEATA_ENABLED:false}
+  enable-auto-data-source-proxy: false
+  application-id: ${spring.application.name}
+  tx-service-group: ${SEATA_TX_SERVICE_GROUP:frameworkjava-chat-tx-group}
+  service:
+    vgroup-mapping:
+      frameworkjava-chat-tx-group: default
+    grouplist:
+      default: ${SEATA_TC_ADDR:127.0.0.1:8091}
+  registry:
+    type: file
+  config:
+    type: file
 
 chat:
+  actuator:
+    # Empty by default: health/info remain probeable, all other actuator endpoints fail closed.
+    access-token: ${CHAT_ACTUATOR_ACCESS_TOKEN:}
+  conversation:
+    # Process-local cache of the immutable counterparty per (conversation, member). Membership
+    # itself is still verified against MySQL on every send.
+    participant-cache-ttl-millis: ${CHAT_CONVERSATION_PARTICIPANT_CACHE_TTL_MILLIS:60000}
   outbox:
     batch-size: ${CHAT_OUTBOX_BATCH_SIZE:100}
     worker-threads: ${CHAT_OUTBOX_WORKER_THREADS:4}
     poll-millis: ${CHAT_OUTBOX_POLL_MILLIS:1000}
     retry-delay-millis: ${CHAT_OUTBOX_RETRY_DELAY_MILLIS:1000}
+    max-retries: ${CHAT_OUTBOX_MAX_RETRIES:10}
     processing-timeout-millis: ${CHAT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}
     sent-retention-days: ${CHAT_OUTBOX_SENT_RETENTION_DAYS:7}
     cleanup-batch-size: ${CHAT_OUTBOX_CLEANUP_BATCH_SIZE:1000}
     cleanup-poll-millis: ${CHAT_OUTBOX_CLEANUP_POLL_MILLIS:60000}
+    enqueue-threads: ${CHAT_OUTBOX_ENQUEUE_THREADS:4}
+    enqueue-queue-capacity: ${CHAT_OUTBOX_ENQUEUE_QUEUE_CAPACITY:20000}
+    reconcile-enabled: ${CHAT_OUTBOX_RECONCILE_ENABLED:true}
+    reconcile-batch-size: ${CHAT_OUTBOX_RECONCILE_BATCH_SIZE:500}
+    reconcile-overlap-messages: ${CHAT_OUTBOX_RECONCILE_OVERLAP_MESSAGES:100}
+    reconcile-poll-millis: ${CHAT_OUTBOX_RECONCILE_POLL_MILLIS:10000}
   message-sharding:
-    enabled: ${CHAT_MESSAGE_SHARDING_ENABLED:false}
-    dual-write: ${CHAT_MESSAGE_SHARDING_DUAL_WRITE:false}
+    mode: ${CHAT_MESSAGE_SHARDING_MODE:LEGACY_ONLY}
     read-fallback: ${CHAT_MESSAGE_SHARDING_READ_FALLBACK:true}
+    # Send-path idempotency lookup falls back to the legacy table when the shard has no row.
+    # Safe to disable once backfill/verification reports missing=0 (saves one query per send).
+    idempotency-fallback: ${CHAT_MESSAGE_SHARDING_IDEMPOTENCY_FALLBACK:true}
     physical-shard-count: ${CHAT_MESSAGE_PHYSICAL_SHARD_COUNT:32}
+    shards-per-mysql: ${CHAT_MESSAGE_SHARDS_PER_MYSQL:8}
+    physical-enabled: ${CHAT_MESSAGE_SHARDING_PHYSICAL_ENABLED:false}
+    datasources:
+      - url: jdbc:mysql://${CHAT_SHARD_0_HOST:frameworkjava-mysql-shard-0}:${CHAT_SHARD_0_PORT:3306}/${CHAT_SHARD_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+        username: ${CHAT_SHARD_USERNAME:appdev}
+        password: ${CHAT_SHARD_PASSWORD:change-me}
+        maximum-pool-size: ${CHAT_SHARD_POOL_SIZE:10}
+        connection-timeout: ${CHAT_SHARD_CONNECTION_TIMEOUT:30000}
+      - url: jdbc:mysql://${CHAT_SHARD_1_HOST:frameworkjava-mysql-shard-1}:${CHAT_SHARD_1_PORT:3306}/${CHAT_SHARD_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+        username: ${CHAT_SHARD_USERNAME:appdev}
+        password: ${CHAT_SHARD_PASSWORD:change-me}
+        maximum-pool-size: ${CHAT_SHARD_POOL_SIZE:10}
+        connection-timeout: ${CHAT_SHARD_CONNECTION_TIMEOUT:30000}
+      - url: jdbc:mysql://${CHAT_SHARD_2_HOST:frameworkjava-mysql-shard-2}:${CHAT_SHARD_2_PORT:3306}/${CHAT_SHARD_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+        username: ${CHAT_SHARD_USERNAME:appdev}
+        password: ${CHAT_SHARD_PASSWORD:change-me}
+        maximum-pool-size: ${CHAT_SHARD_POOL_SIZE:10}
+        connection-timeout: ${CHAT_SHARD_CONNECTION_TIMEOUT:30000}
+      - url: jdbc:mysql://${CHAT_SHARD_3_HOST:frameworkjava-mysql-shard-3}:${CHAT_SHARD_3_PORT:3306}/${CHAT_SHARD_DATABASE:frameworkjava_dev}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+        username: ${CHAT_SHARD_USERNAME:appdev}
+        password: ${CHAT_SHARD_PASSWORD:change-me}
+        maximum-pool-size: ${CHAT_SHARD_POOL_SIZE:10}
+        connection-timeout: ${CHAT_SHARD_CONNECTION_TIMEOUT:30000}
     backfill:
       enabled: ${CHAT_MESSAGE_SHARDING_BACKFILL_ENABLED:false}
       batch-size: ${CHAT_MESSAGE_SHARDING_BACKFILL_BATCH_SIZE:1000}
@@ -78,6 +134,7 @@ chat:
         multiplier: ${CHAT_RABBIT_PERSIST_RETRY_MULTIPLIER:2.0}
         max-interval-millis: ${CHAT_RABBIT_PERSIST_RETRY_MAX_INTERVAL_MILLIS:8000}
   websocket:
+    allowed-origins: ${CHAT_WEBSOCKET_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
     idle-timeout-seconds: ${CHAT_WEBSOCKET_IDLE_TIMEOUT_SECONDS:150}
     idle-scan-millis: ${CHAT_WEBSOCKET_IDLE_SCAN_MILLIS:30000}
     outbound:
@@ -94,8 +151,8 @@ chat:
       max-messages-per-second: ${CHAT_CONVERSATION_MAX_MESSAGES_PER_SECOND:50}
       idle-expire-seconds: ${CHAT_CONVERSATION_RATE_LIMIT_IDLE_EXPIRE_SECONDS:300}
   netty:
-    enabled: ${CHAT_NETTY_ENABLED:false}
-    bind-host: ${CHAT_NETTY_BIND_HOST:127.0.0.1}
+    enabled: ${CHAT_NETTY_ENABLED:true}
+    bind-host: ${CHAT_NETTY_BIND_HOST:0.0.0.0}
     port: ${CHAT_NETTY_PORT:18084}
     worker-threads: ${CHAT_NETTY_WORKER_THREADS:0}
     business-threads: ${CHAT_NETTY_BUSINESS_THREADS:16}

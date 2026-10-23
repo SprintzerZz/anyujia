@@ -65,3 +65,11 @@ build/
 ### Node ###
 /anyujia-chat/anyujia-chat-web/node_modules/
 /anyujia-chat/anyujia-chat-web/dist/
+
+### Local test data and model caches ###
+.tmp-chat-e2e/
+HANDOFF.md
+deploy/dev/data/
+deploy/perf/results/
+**/__pycache__/
+deploy/embedding/models/

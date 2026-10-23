@@ -66,6 +66,11 @@ coupon:
     expire-consumer-group: coupon-expire-consumer-group
   grant:
     scan-cron: 0 0/5 * * * ?
+  receive:
+    redis:
+      retry-attempts: ${COUPON_RECEIVE_REDIS_RETRY_ATTEMPTS:2}
+      retry-backoff-millis: ${COUPON_RECEIVE_REDIS_RETRY_BACKOFF_MILLIS:30}
+      fast-fail-millis: ${COUPON_RECEIVE_REDIS_FAST_FAIL_MILLIS:3000}
   expire:
     scan-cron: 0 0/10 * * * ?
     scan-limit: 500

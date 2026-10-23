@@ -1,0 +1,5 @@
+# One-off rebuild that swaps only the jar layer, reusing the already-pulled
+# runtime base via the existing image (avoids re-pulling eclipse-temurin when
+# Docker Hub is flaky). The inherited ENTRYPOINT already runs /app/app.jar.
+FROM frameworkjava-chat:dev
+COPY --chown=app:app anyujia-chat.jar /app/app.jar

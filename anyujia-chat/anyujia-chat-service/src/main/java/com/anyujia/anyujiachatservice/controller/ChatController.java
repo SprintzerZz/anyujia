@@ -104,6 +104,7 @@ public class ChatController implements ChatFeignClient {
         return ApiResult.success(messageService.send(userId, request));
     }
 
+    @Override
     @PostMapping("/agent/session/add")
     public ApiResult<ConversationCreateVO> createAgentSession(@RequestHeader("userId") Long userId,
                                                               @RequestHeader("userFrom") String userFrom,

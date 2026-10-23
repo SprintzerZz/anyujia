@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -23,10 +22,10 @@ public class ChatMessagePersistConsumer {
 
     @RabbitListener(queues = "chat.message.persist.queue",
             containerFactory = "chatPersistBatchListenerContainerFactory")
-    @Transactional(rollbackFor = Exception.class)
     public void consume(List<ChatMessagePersistEvent> events) {
-        // One transaction covers the batch. Broker acknowledgement happens only after this method
-        // returns successfully, so a crash before commit causes the batch to be redelivered.
+        // Each send() is its own @GlobalTransactional unit (main DB + shard commit together).
+        // Broker acknowledgement happens only after this method returns successfully, so a crash
+        // before commit causes the batch to be redelivered; send() is idempotent, so that is safe.
         long startNanos = System.nanoTime();
         List<ChatMessageAckEvent> acknowledgements = new ArrayList<>(events.size());
         for (ChatMessagePersistEvent event : events) {

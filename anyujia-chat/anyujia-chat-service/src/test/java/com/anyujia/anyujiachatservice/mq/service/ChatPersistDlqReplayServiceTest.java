@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class ChatPersistDlqReplayServiceTest {
 
     @Test
-    void republishesAndAcknowledgesDlqMessageInRabbitTransaction() throws Exception {
+    void republishesBeforeAcknowledgingWithoutRabbitTransaction() throws Exception {
         GetResponse response = new GetResponse(
                 new Envelope(42L, false, "", ""),
                 new AMQP.BasicProperties(),
@@ -58,7 +58,7 @@ class ChatPersistDlqReplayServiceTest {
         int replayed = new ChatPersistDlqReplayService(rabbitOperations).replay(10);
 
         assertEquals(1, replayed);
-        assertEquals(List.of("txSelect", "basicGet", "basicPublish", "basicAck", "basicGet", "txCommit"), calls);
+        assertEquals(List.of("basicGet", "basicPublish", "basicAck", "basicGet"), calls);
     }
 
     private static Object primitiveDefault(Class<?> type) {

@@ -45,15 +45,22 @@ public class LegalConclusionSupportEvaluator {
         List<LegalConclusionSupportVO> result = new ArrayList<>();
         for (String conclusion : conclusions) {
             List<Match> matches = new ArrayList<>();
+            List<Match> conflicts = new ArrayList<>();
             if (citations != null) {
                 for (int i = 0; i < citations.size(); i++) {
                     String quote = citations.get(i).getQuote();
                     Match match = semanticMatch(conclusion, quote, i + 1);
+                    if ("CONTRADICTION_BLOCKED".equals(match.method())) {
+                        conflicts.add(match);
+                    }
                     double score = match.score();
                     if (score > 0) {
                         matches.add(match);
                     }
                 }
+            }
+            if (!conflicts.isEmpty()) {
+                matches = conflicts;
             }
             matches.sort(Comparator.comparingDouble(Match::score).reversed());
             double score = matches.isEmpty() ? 0D : Math.min(1D, matches.get(0).score());
@@ -82,7 +89,7 @@ public class LegalConclusionSupportEvaluator {
                     return new Match(index, scored.score(), "SEMANTIC_ENTAILMENT", "语义模型判定法规证据支持该结论");
                 }
                 if ("CONTRADICTION".equalsIgnoreCase(scored.label())) {
-                    return new Match(index, 0D, "SEMANTIC_ENTAILMENT", "语义模型判定结论与该法规证据冲突");
+                    return new Match(index, 0D, "CONTRADICTION_BLOCKED", "语义模型判定结论与该法规证据冲突，已阻断正向支持");
                 }
                 return new Match(index, scored.score() * 0.5D, "SEMANTIC_ENTAILMENT", "语义模型判定证据不足以完全支持该结论");
             }

@@ -2,8 +2,8 @@ import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, fail, sleep } from 'k6';
 
-const baseUrl = (__ENV.BASE_URL || 'http://127.0.0.1:18080').replace(/\/$/, '');
-const webSocketBaseUrl = baseUrl.replace(/^http/, 'ws');
+const ticketBaseUrl = (__ENV.TICKET_BASE_URL || __ENV.BASE_URL || 'http://127.0.0.1:18083').replace(/\/$/, '');
+const webSocketBaseUrl = (__ENV.WS_URL || 'ws://127.0.0.1:18085').replace(/\/$/, '');
 const tokens = (__ENV.TOKENS || __ENV.TOKEN || '').split(',').map((token) => token.trim()).filter(Boolean);
 const targetVus = Number(__ENV.WS_TARGET_VUS || 10000);
 const rampDuration = __ENV.WS_RAMP_DURATION || '10m';
@@ -40,8 +40,13 @@ function tokenForVu() {
 }
 
 function issueTicket(token) {
-  const response = http.post(`${baseUrl}/chat/websocket/ticket`, null, {
-    headers: { Authorization: `Bearer ${token}` },
+  const headers = { Authorization: `Bearer ${token}` };
+  if (__ENV.TICKET_USER_ID) headers.userId = __ENV.TICKET_USER_ID;
+  if (__ENV.TICKET_USER_NAME) headers.userName = __ENV.TICKET_USER_NAME;
+  if (__ENV.TICKET_USER_FROM) headers.userFrom = __ENV.TICKET_USER_FROM;
+  if (__ENV.TICKET_USER_TYPE) headers.userType = __ENV.TICKET_USER_TYPE;
+  const response = http.post(`${ticketBaseUrl}/chat/websocket/ticket`, null, {
+    headers,
     tags: { api: 'chat-websocket-ticket' },
   });
   if (response.status !== 200 || response.json('code') !== 200000) {

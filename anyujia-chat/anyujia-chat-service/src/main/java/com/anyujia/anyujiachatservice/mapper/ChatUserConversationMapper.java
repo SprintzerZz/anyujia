@@ -48,6 +48,7 @@ public interface ChatUserConversationMapper {
                    updated_at = CURRENT_TIMESTAMP
              WHERE user_id = #{userId}
                AND conversation_id = #{conversationId}
+               AND (last_message_seq IS NULL OR last_message_seq < #{messageSeq})
             """)
     int touchMessage(@Param("userId") Long userId,
                      @Param("conversationId") Long conversationId,
@@ -63,6 +64,7 @@ public interface ChatUserConversationMapper {
                    last_message_time = #{messageTime},
                    updated_at = CURRENT_TIMESTAMP
              WHERE conversation_id = #{conversationId}
+               AND (last_message_seq IS NULL OR last_message_seq &lt; #{messageSeq})
                AND user_id IN
             <foreach collection="userIds" item="userId" open="(" separator="," close=")">
                 #{userId}

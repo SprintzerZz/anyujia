@@ -26,14 +26,21 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+8:00
       - --lower-case-table-names=1
+      - --innodb-flush-log-at-trx-commit=2
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
     ports:
       - "23310:3306"
     volumes:
-      - ../data/frameworkjavadata/mysql-shard-0:/var/lib/mysql
+      - chat_mysql_shard_0:/var/lib/mysql
     networks:
       - frameworkjava_network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: always
 
   frameworkjava-mysql-shard-1:
@@ -46,14 +53,21 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+8:00
       - --lower-case-table-names=1
+      - --innodb-flush-log-at-trx-commit=2
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
     ports:
       - "23311:3306"
     volumes:
-      - ../data/frameworkjavadata/mysql-shard-1:/var/lib/mysql
+      - chat_mysql_shard_1:/var/lib/mysql
     networks:
       - frameworkjava_network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: always
 
   frameworkjava-mysql-shard-2:
@@ -66,14 +80,21 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+8:00
       - --lower-case-table-names=1
+      - --innodb-flush-log-at-trx-commit=2
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
     ports:
       - "23312:3306"
     volumes:
-      - ../data/frameworkjavadata/mysql-shard-2:/var/lib/mysql
+      - chat_mysql_shard_2:/var/lib/mysql
     networks:
       - frameworkjava_network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: always
 
   frameworkjava-mysql-shard-3:
@@ -86,16 +107,30 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+8:00
       - --lower-case-table-names=1
+      - --innodb-flush-log-at-trx-commit=2
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me}
     ports:
       - "23313:3306"
     volumes:
-      - ../data/frameworkjavadata/mysql-shard-3:/var/lib/mysql
+      - chat_mysql_shard_3:/var/lib/mysql
     networks:
       - frameworkjava_network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: always
 
 networks:
   frameworkjava_network:
-    driver: bridge
+    external: true
+    name: frameworkjava_frameworkjava_network
+
+volumes:
+  chat_mysql_shard_0:
+  chat_mysql_shard_1:
+  chat_mysql_shard_2:
+  chat_mysql_shard_3:

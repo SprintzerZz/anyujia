@@ -1,0 +1,995 @@
+{
+  "metadata": {
+    "generatedAt": "2026-10-22T04:29:25Z",
+    "runLabel": "agent-current-answer-seeded",
+    "gitSha": "fef10d44ad124b90b9b5b40408e244b079f07330",
+    "gitDirty": true,
+    "mode": "answer",
+    "endpoint": "http://127.0.0.1:18086",
+    "userFrom": "service",
+    "dataset": "deploy\\eval\\legal-rag\\cases.v1.jsonl",
+    "datasetSha256": "97da09018b73fd51ca2b30e5cac45d8ee705f6cff1adb5e08d5c7b3ad02013c0",
+    "evaluatorSha256": "c31316edab80b32a991c1840cad1f914fbcaf16899b2fc4b7d0218fa3e3ab67c",
+    "caseCount": 37,
+    "datasetVersions": {
+      "1.0.0": 37
+    },
+    "reviewStates": {
+      "source_verified": 37
+    },
+    "categories": {
+      "authority": 1,
+      "contract-basics": 1,
+      "custody": 1,
+      "damage": 3,
+      "decoration": 1,
+      "delivery": 1,
+      "deposit": 1,
+      "expiry": 1,
+      "ownership-change": 4,
+      "privacy": 1,
+      "registration": 2,
+      "remedy": 1,
+      "renewal": 1,
+      "rent": 2,
+      "repair": 2,
+      "safety": 1,
+      "scope-boundary": 3,
+      "subletting": 3,
+      "succession": 1,
+      "term": 1,
+      "termination": 3,
+      "third-party-claim": 1,
+      "use": 1
+    }
+  },
+  "summary": {
+    "caseCount": 37,
+    "citationValidity": 1.0,
+    "citationCoverage": 0.08108108108108109,
+    "groundednessProxy": 0.0,
+    "answerKeywordCoverage": 0.08108108108108109,
+    "scopeCompliance": 0.08108108108108109,
+    "latencyMillis": {
+      "mean": 42.7027324330993,
+      "p50": 39.414500002749264,
+      "p95": 70.8324400009586,
+      "p99": 122.4906800023746
+    }
+  },
+  "failureExamples": [
+    {
+      "id": "deposit-deduction",
+      "query": "房东可以用哪些理由扣我的押金，合同没有写的也能扣吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "landlord-entry",
+      "query": "房东说检查房屋就能随时自己开门进来，这合法吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "landlord-authority",
+      "query": "签约前我能要求房东提供房产证或有权出租的证明吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "repair-duty",
+      "query": "出租屋水管坏了，房东一直不修，我可以自己修并要求报销吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "normal-wear",
+      "query": "正常居住导致墙面和地板自然磨损，退租时我要赔吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "unauthorized-sublet",
+      "query": "我没经过房东同意把一间卧室转租给朋友，房东能解除合同吗？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "rent-arrears",
+      "query": "晚交一次房租，房东是不是马上就能解除租约？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    },
+    {
+      "id": "indefinite-lease-termination",
+      "query": "合同没写租多久，双方是不是都可以随时解除？",
+      "weakMetrics": {
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "deposit-deduction",
+      "query": "房东可以用哪些理由扣我的押金，合同没有写的也能扣吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 30,
+        "generationMillis": 1,
+        "elapsedMillis": 35,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 136.95260000531562
+      }
+    },
+    {
+      "id": "landlord-entry",
+      "query": "房东说检查房屋就能随时自己开门进来，这合法吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 36,
+        "generationMillis": 0,
+        "elapsedMillis": 36,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 47.89059999893652
+      }
+    },
+    {
+      "id": "landlord-authority",
+      "query": "签约前我能要求房东提供房产证或有权出租的证明吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 31,
+        "generationMillis": 0,
+        "elapsedMillis": 31,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 48.283900003298186
+      }
+    },
+    {
+      "id": "repair-duty",
+      "query": "出租屋水管坏了，房东一直不修，我可以自己修并要求报销吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 31,
+        "generationMillis": 0,
+        "elapsedMillis": 31,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 38.937999997870065
+      }
+    },
+    {
+      "id": "normal-wear",
+      "query": "正常居住导致墙面和地板自然磨损，退租时我要赔吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 33,
+        "generationMillis": 0,
+        "elapsedMillis": 33,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 47.15529999521095
+      }
+    },
+    {
+      "id": "unauthorized-sublet",
+      "query": "我没经过房东同意把一间卧室转租给朋友，房东能解除合同吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 27,
+        "generationMillis": 0,
+        "elapsedMillis": 28,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 38.918300000659656
+      }
+    },
+    {
+      "id": "rent-arrears",
+      "query": "晚交一次房租，房东是不是马上就能解除租约？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 24,
+        "generationMillis": 0,
+        "elapsedMillis": 24,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 33.34349999931874
+      }
+    },
+    {
+      "id": "indefinite-lease-termination",
+      "query": "合同没写租多久，双方是不是都可以随时解除？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 26,
+        "generationMillis": 0,
+        "elapsedMillis": 26,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 34.37269999994896
+      }
+    },
+    {
+      "id": "sale-does-not-break-lease",
+      "query": "租期内房东把房子卖了，新房主能让我立即搬走吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 43,
+        "generationMillis": 0,
+        "elapsedMillis": 43,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 59.85759999748552
+      }
+    },
+    {
+      "id": "unsafe-housing",
+      "query": "出租房燃气和消防不合格但房东催我入住，我该怎么办？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 27,
+        "generationMillis": 0,
+        "elapsedMillis": 28,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 39.414500002749264
+      }
+    },
+    {
+      "id": "filing-and-validity",
+      "query": "房东没给租赁合同备案，合同是不是就无效？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 22,
+        "generationMillis": 0,
+        "elapsedMillis": 22,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 29.480400000466034
+      }
+    },
+    {
+      "id": "deposit-dispute-remedy",
+      "query": "房东拒绝退押金，协商不成还能走什么途径？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 25,
+        "generationMillis": 0,
+        "elapsedMillis": 25,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 32.683999997971114
+      }
+    },
+    {
+      "id": "landlord-termination-notice",
+      "query": "房东依法解除租赁合同后，可以要求我当天立刻搬走吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 30,
+        "generationMillis": 0,
+        "elapsedMillis": 30,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 48.460800004249904
+      }
+    },
+    {
+      "id": "labor-dispute-boundary",
+      "query": "公司拖欠我三个月工资，我应该依据哪条劳动法起诉？",
+      "answer": {
+        "answer": "该问题不属于当前住房租赁法律知识库的覆盖范围，无法依据本知识库作答。请改用对应领域的法律资料或咨询专业人士。",
+        "citations": [],
+        "mode": "OUT_OF_SCOPE",
+        "aiGenerated": false,
+        "degraded": false,
+        "retrievalMillis": 0,
+        "generationMillis": 0,
+        "elapsedMillis": 0,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 1.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 1.0,
+        "scopeCompliance": 1.0,
+        "latencyMillis": 12.17979999637464
+      }
+    },
+    {
+      "id": "lease-contract-definition",
+      "query": "租房合同本质上约定的双方核心义务是什么？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 26,
+        "generationMillis": 0,
+        "elapsedMillis": 26,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 37.29600000224309
+      }
+    },
+    {
+      "id": "lease-term-over-20-years",
+      "query": "房东让我签25年租房合同，这25年都有效吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 18,
+        "generationMillis": 0,
+        "elapsedMillis": 18,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 32.72010000364389
+      }
+    },
+    {
+      "id": "unregistered-lease-validity",
+      "query": "房屋租赁合同没有办理登记备案，会影响合同效力吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 26,
+        "generationMillis": 0,
+        "elapsedMillis": 26,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 34.86819999670843
+      }
+    },
+    {
+      "id": "landlord-delivery-duty",
+      "query": "房东收了钱但迟迟不交房，法律上他有交付义务吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 53,
+        "generationMillis": 0,
+        "elapsedMillis": 53,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 64.34540000191191
+      }
+    },
+    {
+      "id": "tenant-use-method",
+      "query": "合同写明只能居住，我能把房子改成小工作室接待客户吗？",
+      "answer": {
+        "answer": "该问题不属于当前住房租赁法律知识库的覆盖范围，无法依据本知识库作答。请改用对应领域的法律资料或咨询专业人士。",
+        "citations": [],
+        "mode": "OUT_OF_SCOPE",
+        "aiGenerated": false,
+        "degraded": false,
+        "retrievalMillis": 0,
+        "generationMillis": 0,
+        "elapsedMillis": 0,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 26.94550000160234
+      }
+    },
+    {
+      "id": "misuse-damage-liability",
+      "query": "我擅自拆墙改造导致房屋损坏，房东能要求赔偿或解除合同吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 30,
+        "generationMillis": 0,
+        "elapsedMillis": 30,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 39.48260000470327
+      }
+    },
+    {
+      "id": "repair-duty-basic",
+      "query": "租房期间房屋设施自然老化坏了，默认是谁负责维修？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 21,
+        "generationMillis": 0,
+        "elapsedMillis": 21,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 31.122400003368966
+      }
+    },
+    {
+      "id": "tenant-keep-property",
+      "query": "我租房期间把门窗家具保管坏了，需要承担责任吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 49,
+        "generationMillis": 0,
+        "elapsedMillis": 49,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 96.78059999714606
+      }
+    },
+    {
+      "id": "decoration-consent",
+      "query": "我想装修出租屋或者加装固定设施，必须经过房东同意吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 35,
+        "generationMillis": 0,
+        "elapsedMillis": 35,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 46.256300003733486
+      }
+    },
+    {
+      "id": "sublease-with-consent",
+      "query": "如果房东同意我转租，原来的租房合同还有效吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 31,
+        "generationMillis": 0,
+        "elapsedMillis": 31,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 43.69389999919804
+      }
+    },
+    {
+      "id": "sublease-six-month-objection",
+      "query": "房东知道我转租但半年都没反对，现在还能说不同意解除吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 32,
+        "generationMillis": 0,
+        "elapsedMillis": 32,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 45.431700003973674
+      }
+    },
+    {
+      "id": "rent-payment-time",
+      "query": "合同没有写清楚房租什么时候交，应该怎么确定付款时间？",
+      "answer": {
+        "answer": "该问题不属于当前住房租赁法律知识库的覆盖范围，无法依据本知识库作答。请改用对应领域的法律资料或咨询专业人士。",
+        "citations": [],
+        "mode": "OUT_OF_SCOPE",
+        "aiGenerated": false,
+        "degraded": false,
+        "retrievalMillis": 0,
+        "generationMillis": 0,
+        "elapsedMillis": 0,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 17.02110000042012
+      }
+    },
+    {
+      "id": "third-party-claim",
+      "query": "有人主张房子不是房东的，影响我使用时我能少交租吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 31,
+        "generationMillis": 0,
+        "elapsedMillis": 31,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 47.00510000111535
+      }
+    },
+    {
+      "id": "non-tenant-reason-unusable",
+      "query": "不是我的原因导致房子不能住了，我能解除租赁合同吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 27,
+        "generationMillis": 0,
+        "elapsedMillis": 27,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 38.799699999799486
+      }
+    },
+    {
+      "id": "tenant-preemption-sale",
+      "query": "房东卖房时，我作为租客有没有优先购买权？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 27,
+        "generationMillis": 0,
+        "elapsedMillis": 27,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 41.7721000048914
+      }
+    },
+    {
+      "id": "auction-notice",
+      "query": "房东委托拍卖我租的房子，需要提前通知我吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 36,
+        "generationMillis": 0,
+        "elapsedMillis": 36,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 49.55889999837382
+      }
+    },
+    {
+      "id": "preemption-damages",
+      "query": "房东卖房没通知我，侵害我的优先购买权，我能主张赔偿吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 45,
+        "generationMillis": 0,
+        "elapsedMillis": 45,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 55.75640000461135
+      }
+    },
+    {
+      "id": "property-damage-rent-reduction",
+      "query": "暴雨导致出租屋部分损坏不能正常住，我能要求减租吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 36,
+        "generationMillis": 0,
+        "elapsedMillis": 36,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 45.83999999886146
+      }
+    },
+    {
+      "id": "tenant-death-cohabit-continue",
+      "query": "承租人去世后，原来一起住的家人还能继续租住吗？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 27,
+        "generationMillis": 0,
+        "elapsedMillis": 27,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 43.648300001223106
+      }
+    },
+    {
+      "id": "return-property-after-expiry",
+      "query": "租期结束退房时，房屋应该按什么状态返还？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 23,
+        "generationMillis": 0,
+        "elapsedMillis": 23,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 31.22859999712091
+      }
+    },
+    {
+      "id": "continued-use-renewal",
+      "query": "租期到了我继续住，房东也没反对，合同怎么算？",
+      "answer": {
+        "answer": "当前法规库中没有检索到足够依据，建议补充地区、日期和具体事实后再核对。",
+        "citations": [],
+        "mode": "NO_EVIDENCE",
+        "aiGenerated": false,
+        "degraded": true,
+        "retrievalMillis": 31,
+        "generationMillis": 0,
+        "elapsedMillis": 31,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 0.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 0.0,
+        "scopeCompliance": 0.0,
+        "latencyMillis": 38.90529999625869
+      }
+    },
+    {
+      "id": "medical-malpractice-boundary",
+      "query": "医院手术失败造成损害，我能用住房租赁条例索赔吗？",
+      "answer": {
+        "answer": "该问题不属于当前住房租赁法律知识库的覆盖范围，无法依据本知识库作答。请改用对应领域的法律资料或咨询专业人士。",
+        "citations": [],
+        "mode": "OUT_OF_SCOPE",
+        "aiGenerated": false,
+        "degraded": false,
+        "retrievalMillis": 0,
+        "generationMillis": 0,
+        "elapsedMillis": 0,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 1.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 1.0,
+        "scopeCompliance": 1.0,
+        "latencyMillis": 17.28210000146646
+      }
+    },
+    {
+      "id": "traffic-accident-boundary",
+      "query": "发生交通事故对方全责，我应该怎么主张误工费？",
+      "answer": {
+        "answer": "该问题不属于当前住房租赁法律知识库的覆盖范围，无法依据本知识库作答。请改用对应领域的法律资料或咨询专业人士。",
+        "citations": [],
+        "mode": "OUT_OF_SCOPE",
+        "aiGenerated": false,
+        "degraded": false,
+        "retrievalMillis": 0,
+        "generationMillis": 0,
+        "elapsedMillis": 0,
+        "disclaimer": "本回答仅提供一般法律信息和风险提示，不替代律师针对具体事实提供的法律意见。"
+      },
+      "metrics": {
+        "citationValidity": 1.0,
+        "citationCoverage": 1.0,
+        "groundednessProxy": 0.0,
+        "answerKeywordCoverage": 1.0,
+        "scopeCompliance": 1.0,
+        "latencyMillis": 6.308800002443604
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+services:
+  frameworkjava-legal-entailment-1:
+    image: frameworkjava-legal-embedding:dev
+    environment:
+      EMBEDDING_DEVICE: cpu
+      LEGAL_ENABLE_EMBEDDING: "false"
+      LEGAL_ENABLE_RERANKER: "false"
+      LEGAL_ENTAILMENT_QUEUE_SIZE: "64"
+      LEGAL_ENTAILMENT_BATCH_SIZE: "8"
+      LEGAL_ENTAILMENT_BATCH_WAIT_MS: "20"
+      LEGAL_ENTAILMENT_QUEUE_TIMEOUT_MS: "2500"
+      LEGAL_ENTAILMENT_INT8: "true"
+      LEGAL_LOCAL_ENTAILMENT_MODEL: IDEA-CCNL/Erlangshen-Roberta-110M-NLI
+      HF_HUB_DISABLE_XET: "1"
+      NO_PROXY: localhost,127.0.0.1,frameworkjava-legal-entailment-1,frameworkjava-legal-entailment-2
+    volumes:
+      - ../data/frameworkjavadata/embedding/models:/models
+    expose:
+      - "18091"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:18091/ready >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
+    networks:
+      - frameworkjava_network
+
+  frameworkjava-legal-entailment-2:
+    extends:
+      service: frameworkjava-legal-entailment-1
+    environment:
+      NO_PROXY: localhost,127.0.0.1,frameworkjava-legal-entailment-1,frameworkjava-legal-entailment-2
+
+  frameworkjava-legal-entailment-gateway:
+    image: haproxy:3.1-alpine
+    ports:
+      - "18091:18091"
+    volumes:
+      - ../../embedding/haproxy-entailment.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      frameworkjava-legal-entailment-1:
+        condition: service_healthy
+      frameworkjava-legal-entailment-2:
+        condition: service_healthy
+    networks:
+      frameworkjava_network:
+        aliases:
+          - frameworkjava-legal-embedding
+
+networks:
+  frameworkjava_network:
+    external: true
+    name: frameworkjava_frameworkjava_network

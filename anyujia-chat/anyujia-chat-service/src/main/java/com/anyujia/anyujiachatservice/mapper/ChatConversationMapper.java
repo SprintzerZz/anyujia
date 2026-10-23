@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import java.time.LocalDateTime;
 
 @Mapper
 public interface ChatConversationMapper extends BaseMapper<ChatConversation> {
@@ -40,4 +41,23 @@ public interface ChatConversationMapper extends BaseMapper<ChatConversation> {
             """)
     int updateNextMessageSeq(@Param("conversationId") Long conversationId,
                              @Param("nextSequence") Long nextSequence);
+
+    /** Advances sequence/latest-message metadata without allowing an older transaction to regress it. */
+    @Update("""
+            UPDATE chat_conversation
+               SET last_message_id = CASE WHEN COALESCE(last_message_seq, 0) < #{sequence}
+                                          THEN #{messageId} ELSE last_message_id END,
+                   last_message_time = CASE WHEN COALESCE(last_message_seq, 0) < #{sequence}
+                                            THEN #{lastMessageTime} ELSE last_message_time END,
+                   updated_at = CASE WHEN COALESCE(last_message_seq, 0) < #{sequence}
+                                     THEN #{updatedAt} ELSE updated_at END,
+                   next_message_seq = GREATEST(COALESCE(next_message_seq, 0), #{sequence}),
+                   last_message_seq = GREATEST(COALESCE(last_message_seq, 0), #{sequence})
+             WHERE id = #{conversationId}
+            """)
+    int advanceLatestMessage(@Param("conversationId") Long conversationId,
+                             @Param("messageId") Long messageId,
+                             @Param("sequence") Long sequence,
+                             @Param("lastMessageTime") Long lastMessageTime,
+                             @Param("updatedAt") LocalDateTime updatedAt);
 }

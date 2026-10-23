@@ -1,5 +1,6 @@
 package com.anyujia.anyujiachatservice.sharding;
 
+import com.anyujia.anyujiachatservice.domain.entity.ChatMessage;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -8,17 +9,20 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Restartable, low-lock backfill from the legacy table into physical shard tables.
- * It is deliberately disabled by default and must only run after V19 is applied.
+ * Restartable, low-lock backfill from the legacy table into shard tables. In single-database
+ * mode it writes the 32 logical shard tables on the main MySQL; when
+ * {@code chat.message-sharding.physical-enabled} is on it routes each row to its physical MySQL
+ * instance via {@link ChatMessageShardStore}. Disabled by default; enable only after the shard
+ * schema exists.
  */
 @Service
 @Slf4j
@@ -47,12 +51,15 @@ public class ChatMessageShardBackfillService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ChatMessageShardRouter shardRouter;
+    private final ObjectProvider<ChatMessageShardStore> shardStoreProvider;
 
     @Value("${chat.message-sharding.backfill.batch-size:1000}")
     private int batchSize;
 
+    @Value("${chat.message-sharding.physical-enabled:false}")
+    private boolean physicalEnabled;
+
     @Scheduled(fixedDelayString = "${chat.message-sharding.backfill.fixed-delay-millis:10000}")
-    @Transactional(rollbackFor = Exception.class)
     public void migrateBatch() {
         Long cursor = jdbcTemplate.queryForObject(PROGRESS_SQL, Long.class);
         if (cursor == null) {
@@ -64,30 +71,53 @@ public class ChatMessageShardBackfillService {
             return;
         }
 
-        Map<String, List<BackfillRow>> byTable = new LinkedHashMap<>();
-        for (BackfillRow row : rows) {
-            String table = shardRouter.tableName(row.conversationId());
-            byTable.computeIfAbsent(table, ignored -> new java.util.ArrayList<>()).add(row);
-        }
-        for (Map.Entry<String, List<BackfillRow>> entry : byTable.entrySet()) {
-            jdbcTemplate.batchUpdate(String.format(INSERT_SQL, entry.getKey()),
-                    entry.getValue(), entry.getValue().size(), (statement, row) -> {
-                        statement.setLong(1, row.id());
-                        statement.setString(2, row.clientMessageId());
-                        statement.setLong(3, row.conversationId());
-                        statement.setLong(4, row.conversationSeq());
-                        statement.setLong(5, row.senderId());
-                        statement.setLong(6, row.recipientId());
-                        statement.setInt(7, row.type());
-                        statement.setString(8, row.content());
-                        statement.setInt(9, row.status());
-                        statement.setInt(10, row.visited());
-                        statement.setTimestamp(11, row.createdAt());
-                    });
+        ChatMessageShardStore store = physicalEnabled ? shardStoreProvider.getIfAvailable() : null;
+        if (store != null) {
+            for (BackfillRow row : rows) {
+                store.insertIgnore(toMessage(row));
+            }
+        } else {
+            Map<String, List<BackfillRow>> byTable = new LinkedHashMap<>();
+            for (BackfillRow row : rows) {
+                String table = shardRouter.tableName(row.conversationId());
+                byTable.computeIfAbsent(table, ignored -> new java.util.ArrayList<>()).add(row);
+            }
+            for (Map.Entry<String, List<BackfillRow>> entry : byTable.entrySet()) {
+                jdbcTemplate.batchUpdate(String.format(INSERT_SQL, entry.getKey()),
+                        entry.getValue(), entry.getValue().size(), (statement, row) -> {
+                            statement.setLong(1, row.id());
+                            statement.setString(2, row.clientMessageId());
+                            statement.setLong(3, row.conversationId());
+                            statement.setLong(4, row.conversationSeq());
+                            statement.setLong(5, row.senderId());
+                            statement.setLong(6, row.recipientId());
+                            statement.setInt(7, row.type());
+                            statement.setString(8, row.content());
+                            statement.setInt(9, row.status());
+                            statement.setInt(10, row.visited());
+                            statement.setTimestamp(11, row.createdAt());
+                        });
+            }
         }
         long nextCursor = rows.get(rows.size() - 1).id();
         jdbcTemplate.update(UPDATE_PROGRESS_SQL, nextCursor);
         log.info("Backfilled {} chat messages through id {}", rows.size(), nextCursor);
+    }
+
+    private static ChatMessage toMessage(BackfillRow row) {
+        ChatMessage message = new ChatMessage();
+        message.setId(row.id());
+        message.setClientMessageId(row.clientMessageId());
+        message.setConversationId(row.conversationId());
+        message.setConversationSeq(row.conversationSeq());
+        message.setSenderId(row.senderId());
+        message.setRecipientId(row.recipientId());
+        message.setType(row.type());
+        message.setContent(row.content());
+        message.setStatus(row.status());
+        message.setVisited(row.visited());
+        message.setCreatedAt(row.createdAt().toLocalDateTime());
+        return message;
     }
 
     private record BackfillRow(long id, String clientMessageId, long conversationId,

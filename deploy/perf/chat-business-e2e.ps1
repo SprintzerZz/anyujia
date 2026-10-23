@@ -8,6 +8,12 @@ param(
     [string]$MysqlUser = "appdev",
     [string]$MysqlPassword = "change-me",
     [string]$MysqlDatabase = "frameworkjava_dev",
+    [string[]]$ShardContainers = @("frameworkjava-mysql-shard-0", "frameworkjava-mysql-shard-1",
+        "frameworkjava-mysql-shard-2", "frameworkjava-mysql-shard-3"),
+    [string]$ShardUser = "root",
+    [string]$ShardPassword = "change-me",
+    [string]$ShardDatabase = "frameworkjava_dev",
+    [int]$ShardsPerMysql = 8,
     [string]$RedisContainer = "frameworkjava-redis-master",
     [string]$RedisPassword = "change-me",
     [string]$RabbitApi = "http://127.0.0.1:15672",
@@ -29,6 +35,29 @@ function Invoke-MysqlScalar([string]$Sql) {
         mysql "-u$MysqlUser" $MysqlDatabase -Nse $Sql
     if ($LASTEXITCODE -ne 0) { throw "MySQL query failed" }
     return ($output -join "`n").Trim()
+}
+
+function Invoke-ShardMysqlScalar([string]$Container, [string]$Sql) {
+    $output = & docker exec -e "MYSQL_PWD=$ShardPassword" $Container `
+        mysql "-u$ShardUser" $ShardDatabase -Nse $Sql
+    if ($LASTEXITCODE -ne 0) { throw "Shard MySQL query failed: $Container" }
+    return ($output -join "`n").Trim()
+}
+
+function Get-MessageId([string]$ClientMessageId) {
+    $legacyId = Invoke-MysqlScalar "SELECT id FROM chat_message WHERE sender_id=$SenderId AND client_message_id='$ClientMessageId' LIMIT 1;"
+    if ($legacyId) { return $legacyId }
+
+    # SHARD_ONLY deployments do not populate the legacy table. Mirror
+    # ChatMessageShardRouter: virtual_bucket = conversation_id % 1024,
+    # physical_shard = virtual_bucket % physical_shard_count.
+    $physicalShardCount = $ShardContainers.Count * $ShardsPerMysql
+    $virtualBucket = $SessionId % 1024
+    $physicalShard = $virtualBucket % $physicalShardCount
+    $mysqlIndex = [int]($physicalShard / $ShardsPerMysql)
+    $table = "chat_message_s{0:d2}" -f $physicalShard
+    return Invoke-ShardMysqlScalar $ShardContainers[$mysqlIndex] `
+        "SELECT id FROM $table WHERE sender_id=$SenderId AND client_message_id='$ClientMessageId' LIMIT 1;"
 }
 
 function Invoke-Redis([string[]]$Arguments) {
@@ -130,7 +159,7 @@ try {
 }
 
 $messageId = Wait-Until "MySQL chat_message persistence" {
-    Invoke-MysqlScalar "SELECT id FROM chat_message WHERE sender_id=$SenderId AND client_message_id='$requestId' LIMIT 1;"
+    Get-MessageId $requestId
 }
 
 Wait-Until "RabbitMQ persistent exchange publish" {

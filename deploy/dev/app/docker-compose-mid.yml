@@ -26,6 +26,8 @@ services:
       '--binlog-ignore-db=mysql',
       '--binlog-cache-size=256M',
       '--binlog-format=ROW',
+      '--innodb-flush-log-at-trx-commit=2',
+      '--sync-binlog=0',
       '--max_connections=2000'
     ]
     # 设置为always表示容器在退出时总是自动重启。
@@ -55,6 +57,31 @@ services:
         soft: 20000
         # 设置硬限制为 40000，表示容器内的进程无论在什么情况下，最多可以打开的文件描述符数量为 40000。
         hard: 40000
+  frameworkjava-seata:
+    container_name: frameworkjava-seata
+    image: apache/seata-server:2.2.0
+    ports:
+      - "8091:8091"
+      - "7091:7091"
+    volumes:
+      # The apache/seata-server image does not bundle a MySQL JDBC driver. The Jib
+      # classpath is /seata-server/libs/*, so the driver must land directly in libs/.
+      - ./seata/jdbc/mysql-connector-j.jar:/seata-server/libs/mysql-connector-j.jar:ro
+    environment:
+      SEATA_IP: frameworkjava-seata
+      SEATA_PORT: "8091"
+      SEATA_STORE_MODE: db
+      SEATA_STORE_DB_DATASOURCE: druid
+      SEATA_STORE_DB_URL: jdbc:mysql://frameworkjava-mysql:3306/frameworkjava_seata?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SEATA_STORE_DB_USER: appdev
+      SEATA_STORE_DB_PASSWORD: change-me
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-mysql:
+        condition: service_healthy
+
   frameworkjava-nacos:
     container_name: frameworkjava-nacos
     image: nacos/nacos-server:v2.2.2
@@ -91,21 +118,215 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
-  frameworkjava-redis:
-    container_name: frameworkjava-redis
+  frameworkjava-redis-master:
+    container_name: frameworkjava-redis-master
     image: redis:7.0.15
     ports:
       - "6379:6379"
     volumes:
-      - ./redis/conf/redis.conf:/usr/local/etc/redis/redis.conf
-      - ../data/frameworkjavadata/redis/data:/data
+      - ../data/frameworkjavadata/redis/master:/data
     # 启动时执行的命令
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command:
+      - sh
+      - -c
+      - |
+        redis-server \
+          --bind 0.0.0.0 \
+          --protected-mode no \
+          --port 6379 \
+          --requirepass "$${REDIS_PASSWORD}" \
+          --masterauth "$${REDIS_PASSWORD}" \
+          --appendonly yes \
+          --dir /data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
     restart: always
     networks:
       - frameworkjava_network
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: [ "CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frameworkjava-redis-replica-1:
+    container_name: frameworkjava-redis-replica-1
+    image: redis:7.0.15
+    ports:
+      - "6380:6379"
+    volumes:
+      - ../data/frameworkjavadata/redis/replica-1:/data
+    command:
+      - sh
+      - -c
+      - |
+        redis-server \
+          --bind 0.0.0.0 \
+          --protected-mode no \
+          --port 6379 \
+          --replicaof frameworkjava-redis-master 6379 \
+          --requirepass "$${REDIS_PASSWORD}" \
+          --masterauth "$${REDIS_PASSWORD}" \
+          --appendonly yes \
+          --dir /data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frameworkjava-redis-replica-2:
+    container_name: frameworkjava-redis-replica-2
+    image: redis:7.0.15
+    ports:
+      - "6381:6379"
+    volumes:
+      - ../data/frameworkjavadata/redis/replica-2:/data
+    command:
+      - sh
+      - -c
+      - |
+        redis-server \
+          --bind 0.0.0.0 \
+          --protected-mode no \
+          --port 6379 \
+          --replicaof frameworkjava-redis-master 6379 \
+          --requirepass "$${REDIS_PASSWORD}" \
+          --masterauth "$${REDIS_PASSWORD}" \
+          --appendonly yes \
+          --dir /data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frameworkjava-redis-sentinel-1:
+    container_name: frameworkjava-redis-sentinel-1
+    image: redis:7.0.15
+    ports:
+      - "26379:26379"
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster frameworkjava-redis-master 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-sentinel /tmp/sentinel.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-redis-master:
+        condition: service_healthy
+      frameworkjava-redis-replica-1:
+        condition: service_healthy
+      frameworkjava-redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frameworkjava-redis-sentinel-2:
+    container_name: frameworkjava-redis-sentinel-2
+    image: redis:7.0.15
+    ports:
+      - "26380:26379"
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster frameworkjava-redis-master 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-sentinel /tmp/sentinel.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-redis-master:
+        condition: service_healthy
+      frameworkjava-redis-replica-1:
+        condition: service_healthy
+      frameworkjava-redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frameworkjava-redis-sentinel-3:
+    container_name: frameworkjava-redis-sentinel-3
+    image: redis:7.0.15
+    ports:
+      - "26381:26379"
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        sentinel monitor mymaster frameworkjava-redis-master 6379 2
+        sentinel auth-pass mymaster $${REDIS_PASSWORD}
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-sentinel /tmp/sentinel.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+    restart: always
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-redis-master:
+        condition: service_healthy
+      frameworkjava-redis-replica-1:
+        condition: service_healthy
+      frameworkjava-redis-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -p 26379 ping | grep PONG" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -149,8 +370,9 @@ services:
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
       NACOS_ADDR: frameworkjava-nacos:8848
-      SPRING_DATA_REDIS_HOST: frameworkjava-redis
-      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
       SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
       SPRING_RABBITMQ_PORT: 5672
     ports:
@@ -163,7 +385,11 @@ services:
         condition: service_healthy
       frameworkjava-nacos:
         condition: service_healthy
-      frameworkjava-redis:
+      frameworkjava-redis-sentinel-1:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-2:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-3:
         condition: service_healthy
       frameworkjava-rabbitmq:
         condition: service_healthy
@@ -209,14 +435,24 @@ services:
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
       NACOS_ADDR: frameworkjava-nacos:8848
-      SPRING_DATA_REDIS_HOST: frameworkjava-redis
-      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
       SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
       SPRING_RABBITMQ_PORT: 5672
       CHAT_NETTY_ENABLED: "true"
       CHAT_NETTY_BIND_HOST: 0.0.0.0
+      SEATA_TC_ADDR: frameworkjava-seata:8091
+      CHAT_SHARD_0_HOST: frameworkjava-mysql-shard-0
+      CHAT_SHARD_1_HOST: frameworkjava-mysql-shard-1
+      CHAT_SHARD_2_HOST: frameworkjava-mysql-shard-2
+      CHAT_SHARD_3_HOST: frameworkjava-mysql-shard-3
+      CHAT_SHARD_DATABASE: frameworkjava_dev
+      CHAT_SHARD_USERNAME: appdev
+      CHAT_SHARD_PASSWORD: change-me
     ports:
       - "18083:18083"
+      - "18085:18084"
     restart: always
     networks:
       - frameworkjava_network
@@ -225,7 +461,11 @@ services:
         condition: service_started
       frameworkjava-house:
         condition: service_started
-      frameworkjava-redis:
+      frameworkjava-redis-sentinel-1:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-2:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-3:
         condition: service_healthy
       frameworkjava-rabbitmq:
         condition: service_healthy
@@ -245,9 +485,10 @@ services:
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
       NACOS_ADDR: frameworkjava-nacos:8848
-      REDIS_HOST: frameworkjava-redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: change-me
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
     ports:
       - "18086:18086"
     restart: always
@@ -258,7 +499,11 @@ services:
         condition: service_healthy
       frameworkjava-nacos:
         condition: service_healthy
-      frameworkjava-redis:
+      frameworkjava-redis-sentinel-1:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-2:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-3:
         condition: service_healthy
 
   frameworkjava-coupon:
@@ -277,8 +522,9 @@ services:
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
       NACOS_ADDR: frameworkjava-nacos:8848
-      SPRING_DATA_REDIS_HOST: frameworkjava-redis
-      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
       ROCKETMQ_NAMESRV_ADDR: frameworkjava-rocketmq-namesrv:9876
     ports:
       - "18085:18084"
@@ -290,7 +536,11 @@ services:
         condition: service_healthy
       frameworkjava-nacos:
         condition: service_healthy
-      frameworkjava-redis:
+      frameworkjava-redis-sentinel-1:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-2:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-3:
         condition: service_healthy
       frameworkjava-rocketmq-topic-init:
         condition: service_completed_successfully
@@ -305,8 +555,9 @@ services:
       NACOS_ADDR: frameworkjava-nacos:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
-      SPRING_DATA_REDIS_HOST: frameworkjava-redis
-      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-change-me}
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
       CHAT_WEBSOCKET_URI: ws://frameworkjava-chat:18084
     ports:
       - "18080:18080"
@@ -322,6 +573,12 @@ services:
         condition: service_started
       frameworkjava-coupon:
         condition: service_started
+      frameworkjava-redis-sentinel-1:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-2:
+        condition: service_healthy
+      frameworkjava-redis-sentinel-3:
+        condition: service_healthy
 
   frameworkjava-rocketmq-init:
     image: apache/rocketmq:5.3.2
@@ -485,7 +742,7 @@ services:
 
   frameworkjava-legal-embedding:
     container_name: frameworkjava-legal-embedding
-    build: ./embedding
+    build: ../../embedding
     image: frameworkjava-legal-embedding:dev
     environment:
       EMBEDDING_DEVICE: cpu
@@ -503,7 +760,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 120s
+      start_period: 900s
 
 # 配置声明了一个可以供相关容器接入的网络
 networks:

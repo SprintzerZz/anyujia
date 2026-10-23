@@ -1,6 +1,7 @@
 package com.anyujia.anyujiachatapi.feign;
 
 import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
+import com.anyujia.anyujiachatapi.domain.dto.AgentSessionCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationContextReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationGetReqDTO;
@@ -31,6 +32,11 @@ public interface ChatFeignClient {
                                           @RequestHeader("userType") Integer userType,
                                           @RequestHeader("userFrom") String userFrom,
                                           @RequestBody ConversationCreateReqDTO request);
+
+    @PostMapping("/agent/session/add")
+    ApiResult<ConversationCreateVO> createAgentSession(@RequestHeader("userId") Long userId,
+                                                       @RequestHeader("userFrom") String userFrom,
+                                                       @RequestBody AgentSessionCreateReqDTO request);
 
     @PostMapping("/session/get")
     ApiResult<ConversationCreateVO> get(@RequestHeader("userId") Long userId,

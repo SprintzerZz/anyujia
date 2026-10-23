@@ -15,8 +15,8 @@ public class ChatPersistDlqEndpoint {
     private final ChatPersistDlqReplayService replayService;
 
     @WriteOperation
-    public Map<String, Object> replay(Integer limit) {
-        int replayed = replayService.replay(limit == null ? 100 : limit);
+    public Map<String, Object> replay() {
+        int replayed = replayService.replay(100);
         return Map.of("replayed", replayed, "status", "committed");
     }
 }

@@ -141,7 +141,11 @@ public class LegalAiProperties {
         @NotBlank
         private String endpoint = "http://127.0.0.1:18091/entailment";
         @NotBlank
-        private String model = "BAAI/bge-nli-base-zh";
+        private String model = "IDEA-CCNL/Erlangshen-Roberta-110M-NLI";
+        @Min(100)
+        private int connectTimeoutMillis = 1000;
+        @Min(100)
+        private int readTimeoutMillis = 3000;
         @DecimalMin("0.0")
         private double supportedThreshold = 0.75D;
         @DecimalMin("0.0")

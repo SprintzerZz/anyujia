@@ -4,9 +4,14 @@
 services:
   frameworkjava-chat:
     environment:
-      CHAT_MESSAGE_SHARDING_ENABLED: "true"
-      CHAT_MESSAGE_SHARDING_DUAL_WRITE: "true"
+      CHAT_MESSAGE_SHARDING_MODE: "SHARD_ONLY"
       CHAT_MESSAGE_SHARDING_READ_FALLBACK: "true"
+      # Verification has reported missing=0 for every shard, so every legacy row is also present
+      # in its shard. The send-path idempotency lookup therefore no longer needs to miss-and-
+      # fall-back to chat_message on every new message (one wasted query per send).
+      CHAT_MESSAGE_SHARDING_IDEMPOTENCY_FALLBACK: "false"
+      CHAT_MESSAGE_SHARDING_PHYSICAL_ENABLED: "true"
+      SEATA_ENABLED: "false"
       CHAT_MESSAGE_SHARDING_BACKFILL_ENABLED: "true"
       CHAT_MESSAGE_SHARDING_BACKFILL_BATCH_SIZE: "10000"
       CHAT_MESSAGE_SHARDING_VERIFICATION_ENABLED: "true"
@@ -15,3 +20,7 @@ services:
       CHAT_OUTBOX_WORKER_THREADS: "8"
       CHAT_OUTBOX_POLL_MILLIS: "500"
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "30"
+      # The message path holds a shard connection for the idempotency lookup and the INSERT. With
+      # 10 connections per shard instance the pools saturated at ~300 msg/s (pending 16-28) and
+      # requests queued for a connection instead of for the database.
+      CHAT_SHARD_POOL_SIZE: "40"

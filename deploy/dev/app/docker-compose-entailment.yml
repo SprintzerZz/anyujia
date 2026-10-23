@@ -1,0 +1,33 @@
+services:
+  frameworkjava-legal-embedding:
+    environment:
+      EMBEDDING_DEVICE: cpu
+      LEGAL_ENABLE_EMBEDDING: "false"
+      LEGAL_ENABLE_RERANKER: "false"
+      LEGAL_ENTAILMENT_QUEUE_SIZE: "64"
+      LEGAL_ENTAILMENT_BATCH_SIZE: "8"
+      LEGAL_ENTAILMENT_BATCH_WAIT_MS: "20"
+      LEGAL_ENTAILMENT_QUEUE_TIMEOUT_MS: "2500"
+      LEGAL_ENTAILMENT_INT8: "true"
+      LEGAL_LOCAL_ENTAILMENT_MODEL: IDEA-CCNL/Erlangshen-Roberta-110M-NLI
+      HTTP_PROXY: ${LEGAL_HTTP_PROXY:-http://host.docker.internal:7897}
+      HTTPS_PROXY: ${LEGAL_HTTP_PROXY:-http://host.docker.internal:7897}
+      http_proxy: ${LEGAL_HTTP_PROXY:-http://host.docker.internal:7897}
+      https_proxy: ${LEGAL_HTTP_PROXY:-http://host.docker.internal:7897}
+      HF_HUB_DISABLE_XET: "1"
+      NO_PROXY: localhost,127.0.0.1,frameworkjava-legal-embedding
+    networks:
+      - frameworkjava_network
+
+  frameworkjava-legal:
+    environment:
+      LEGAL_LOCAL_ENTAILMENT_ENABLED: "true"
+      LEGAL_LOCAL_ENTAILMENT_ENDPOINT: http://frameworkjava-legal-embedding:18091/entailment
+      LEGAL_LOCAL_ENTAILMENT_MODEL: IDEA-CCNL/Erlangshen-Roberta-110M-NLI
+    networks:
+      - frameworkjava_network
+
+networks:
+  frameworkjava_network:
+    external: true
+    name: frameworkjava_frameworkjava_network

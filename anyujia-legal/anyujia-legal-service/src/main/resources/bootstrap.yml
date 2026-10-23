@@ -158,7 +158,9 @@ legal:
     local-entailment:
       enabled: ${LEGAL_LOCAL_ENTAILMENT_ENABLED:false}
       endpoint: ${LEGAL_LOCAL_ENTAILMENT_ENDPOINT:http://127.0.0.1:18091/entailment}
-      model: ${LEGAL_LOCAL_ENTAILMENT_MODEL:BAAI/bge-nli-base-zh}
+      model: ${LEGAL_LOCAL_ENTAILMENT_MODEL:IDEA-CCNL/Erlangshen-Roberta-110M-NLI}
+      connect-timeout-millis: ${LEGAL_LOCAL_ENTAILMENT_CONNECT_TIMEOUT_MILLIS:1000}
+      read-timeout-millis: ${LEGAL_LOCAL_ENTAILMENT_READ_TIMEOUT_MILLIS:3000}
       supported-threshold: ${LEGAL_LOCAL_ENTAILMENT_SUPPORTED_THRESHOLD:0.75}
       partial-threshold: ${LEGAL_LOCAL_ENTAILMENT_PARTIAL_THRESHOLD:0.45}
       top-n: ${LEGAL_RERANK_TOP_N:8}

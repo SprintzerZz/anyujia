@@ -4,14 +4,20 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.anyujia.anyujiacouponservice.domain.entity.CouponTemplate;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.QueryTimeoutException;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class CouponReceiveCacheService {
 
     private static final String TEMPLATE_KEY = "coupon:template:{%d}";
@@ -30,6 +36,16 @@ public class CouponReceiveCacheService {
             "lua/coupon_receive_restore_stock_keep_marker.lua");
 
     private final StringRedisTemplate redisTemplate;
+    private final AtomicLong redisUnavailableUntilMillis = new AtomicLong(0);
+
+    @Value("${coupon.receive.redis.retry-attempts:2}")
+    private int retryAttempts;
+
+    @Value("${coupon.receive.redis.retry-backoff-millis:30}")
+    private long retryBackoffMillis;
+
+    @Value("${coupon.receive.redis.fast-fail-millis:3000}")
+    private long fastFailMillis;
 
     public CouponReceiveCacheService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
@@ -60,14 +76,14 @@ public class CouponReceiveCacheService {
 
     public ReserveResult reserve(Long templateId, Integer userType, Long userId,
                                  String provinceCode, String cityCode, String districtCode) {
-        Long code = redisTemplate.execute(
-                RESERVE_SCRIPT,
-                keys(templateId, userType, userId),
-                String.valueOf(System.currentTimeMillis()),
-                String.valueOf(userType),
-                value(provinceCode),
-                value(cityCode),
-                value(districtCode));
+        if (isRedisFastFailing()) {
+            return ReserveResult.REDIS_UNAVAILABLE;
+        }
+        Long code = executeReserveWithRetry(templateId, userType, userId,
+                provinceCode, cityCode, districtCode);
+        if (code == null) {
+            return ReserveResult.REDIS_UNAVAILABLE;
+        }
         return ReserveResult.fromCode(code);
     }
 
@@ -103,6 +119,79 @@ public class CouponReceiveCacheService {
         return raw == null ? "" : raw;
     }
 
+    private Long executeReserveWithRetry(Long templateId, Integer userType, Long userId,
+                                         String provinceCode, String cityCode, String districtCode) {
+        RuntimeException lastFailure = null;
+        int maxAttempts = Math.max(0, retryAttempts) + 1;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return redisTemplate.execute(
+                        RESERVE_SCRIPT,
+                        keys(templateId, userType, userId),
+                        String.valueOf(System.currentTimeMillis()),
+                        String.valueOf(userType),
+                        value(provinceCode),
+                        value(cityCode),
+                        value(districtCode));
+            } catch (RuntimeException ex) {
+                if (!isTransientRedisFailure(ex)) {
+                    throw ex;
+                }
+                lastFailure = ex;
+                if (attempt < maxAttempts) {
+                    sleepBeforeRetry(attempt);
+                }
+            }
+        }
+        openRedisFastFailWindow();
+        log.warn("Coupon receive Redis reserve failed after {} attempts, templateId={}, userType={}, userId={}, cause={}",
+                maxAttempts, templateId, userType, userId,
+                lastFailure == null ? "unknown" : lastFailure.toString());
+        return null;
+    }
+
+    private boolean isRedisFastFailing() {
+        return System.currentTimeMillis() < redisUnavailableUntilMillis.get();
+    }
+
+    private void openRedisFastFailWindow() {
+        long until = System.currentTimeMillis() + Math.max(0, fastFailMillis);
+        redisUnavailableUntilMillis.accumulateAndGet(until, Math::max);
+    }
+
+    private void sleepBeforeRetry(int attempt) {
+        long sleepMillis = Math.max(0, retryBackoffMillis) * attempt;
+        if (sleepMillis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(sleepMillis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private boolean isTransientRedisFailure(RuntimeException ex) {
+        if (ex instanceof RedisConnectionFailureException
+                || ex instanceof QueryTimeoutException) {
+            return true;
+        }
+        Throwable current = ex;
+        while (current != null) {
+            String name = current.getClass().getName();
+            if (name.contains("RedisConnection")
+                    || name.contains("RedisCommandTimeout")
+                    || name.contains("RedisTimeout")
+                    || name.contains("RedisException")
+                    || name.contains("SocketTimeout")
+                    || name.contains("ConnectException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private static DefaultRedisScript<Long> script(String path) {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource(path));
@@ -116,7 +205,8 @@ public class CouponReceiveCacheService {
         ALREADY_RECEIVED(2),
         CACHE_MISSING(3),
         TEMPLATE_UNAVAILABLE(4),
-        USER_TYPE_MISMATCH(5);
+        USER_TYPE_MISMATCH(5),
+        REDIS_UNAVAILABLE(6);
 
         private final long code;
 

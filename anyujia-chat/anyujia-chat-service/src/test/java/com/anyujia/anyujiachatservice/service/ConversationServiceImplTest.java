@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.anyujia.anyujiaadminapi.app.user.domain.vo.AppUserVO;
 import com.anyujia.anyujiachatapi.constants.ChatConstants;
+import com.anyujia.anyujiachatapi.domain.dto.AgentSessionCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationCreateReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.ConversationListReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationCreateVO;
@@ -87,6 +88,53 @@ class ConversationServiceImplTest {
                 .containsExactly(10L, 20L);
         assertThat(indexes.getAllValues()).extracting(ChatUserConversation::getOtherUserId)
                 .containsExactly(20L, 10L);
+    }
+
+    @Test
+    void agentSessionCopiesSourceListingAndBindsIndependentConversation() {
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ChatConversationMemberMapper memberMapper = mock(ChatConversationMemberMapper.class);
+        ChatUserConversationMapper userConversationMapper = mock(ChatUserConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        ChatUserProfileProvider profileService = mock(ChatUserProfileProvider.class);
+        ChatParticipantIdentityValidator identityValidator = mock(ChatParticipantIdentityValidator.class);
+        ChatHousePublishProvider housePublishProvider = mock(ChatHousePublishProvider.class);
+        LegalAgentFeignClient legalAgentFeignClient = mock(LegalAgentFeignClient.class);
+        com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache indexCache =
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class);
+        ConversationService service = new ConversationServiceImpl(
+                conversationMapper, memberMapper, userConversationMapper, memberService,
+                profileService, identityValidator, housePublishProvider, legalAgentFeignClient,
+                indexCache, mock(com.anyujia.anyujiachatservice.service.unread.ChatUnreadService.class));
+
+        ChatConversation source = new ChatConversation();
+        source.setId(77L);
+        source.setTenantUserId(10L);
+        source.setLandlordUserId(20L);
+        source.setConversationType(ChatConstants.CONVERSATION_TYPE_LANDLORD_TENANT);
+        source.setStatus(ChatConstants.CONVERSATION_ACTIVE);
+        source.setHouseId(300L);
+        source.setHousePublishId(400L);
+        when(conversationMapper.selectById(77L)).thenReturn(source);
+        when(profileService.toChatUser(any(), eq(10L), eq(ChatConstants.USER_TYPE_TENANT)))
+                .thenReturn(new ChatUserVO());
+        when(legalAgentFeignClient.bind(eq("service"), any()))
+                .thenReturn(com.anyujia.anyujiacommondomain.domain.ApiResult.success());
+
+        AgentSessionCreateReqDTO request = new AgentSessionCreateReqDTO();
+        request.setLandlordConversationId(77L);
+        request.setContractId(900L);
+        ConversationCreateVO result = service.createAgentSession(10L, request);
+
+        ArgumentCaptor<ChatConversation> conversation = ArgumentCaptor.forClass(ChatConversation.class);
+        verify(conversationMapper).insert(conversation.capture());
+        assertThat(conversation.getValue().getConversationType())
+                .isEqualTo(ChatConstants.CONVERSATION_TYPE_AGENT);
+        assertThat(conversation.getValue().getHouseId()).isEqualTo(300L);
+        assertThat(conversation.getValue().getHousePublishId()).isEqualTo(400L);
+        assertThat(result.getSessionId()).isEqualTo(conversation.getValue().getId());
+        verify(memberService).requireMember(77L, 10L);
+        verify(legalAgentFeignClient).bind(eq("service"), any());
     }
 
     @Test

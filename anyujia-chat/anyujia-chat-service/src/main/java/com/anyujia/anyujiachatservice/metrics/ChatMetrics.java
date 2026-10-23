@@ -13,6 +13,10 @@ public class ChatMetrics {
     private final Timer messageSyncTimer;
     private final Timer messageDbWriteTimer;
     private final Timer persistLatencyTimer;
+    private final Timer requireCounterpartyTimer;
+    private final Timer findClientTimer;
+    private final Timer sequenceTimer;
+    private final Timer rateLimitTimer;
     private final Counter pushFailureCounter;
     private final Counter rateLimitedCounter;
     private final AtomicInteger onlineConnections = new AtomicInteger();
@@ -33,6 +37,18 @@ public class ChatMetrics {
                 .register(registry);
         this.persistLatencyTimer = Timer.builder("chat_persist_latency")
                 .description("End-to-end persistence latency from MQ consume to committed ACK")
+                .register(registry);
+        this.requireCounterpartyTimer = Timer.builder("chat_message_require_counterparty_duration")
+                .description("Chat message counterparty lookup duration")
+                .register(registry);
+        this.findClientTimer = Timer.builder("chat_message_find_client_duration")
+                .description("Chat message client-message-id idempotency lookup duration")
+                .register(registry);
+        this.sequenceTimer = Timer.builder("chat_message_sequence_duration")
+                .description("Chat conversation sequence allocation duration")
+                .register(registry);
+        this.rateLimitTimer = Timer.builder("chat_message_rate_limit_duration")
+                .description("Chat conversation rate-limit check duration")
                 .register(registry);
         this.pushFailureCounter = Counter.builder("chat_message_push_failures_total")
                 .description("Persisted chat messages whose online push failed")
@@ -71,6 +87,22 @@ public class ChatMetrics {
 
     public void recordPersistLatency(long startNanos) {
         persistLatencyTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordRequireCounterparty(long startNanos) {
+        requireCounterpartyTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordFindClient(long startNanos) {
+        findClientTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordSequence(long startNanos) {
+        sequenceTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordRateLimit(long startNanos) {
+        rateLimitTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
     }
 
     public void setOutboxBacklog(int pending, int processing) {

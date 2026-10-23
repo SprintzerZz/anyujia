@@ -30,6 +30,8 @@ import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequence
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardContext;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageShardStore;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageStorageMode;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -45,7 +47,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -70,14 +71,28 @@ public class MessageServiceImpl implements MessageService {
     private final ChatMessageShardRouter shardRouter;
     private final ChatMessageOutboxService outboxService;
 
-    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.enabled:false}")
-    private boolean messageShardingEnabled;
-
-    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.dual-write:false}")
-    private boolean messageDualWrite;
+    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.mode:LEGACY_ONLY}")
+    private ChatMessageStorageMode storageMode = ChatMessageStorageMode.LEGACY_ONLY;
 
     @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.read-fallback:true}")
     private boolean messageReadFallback;
+
+    /**
+     * Whether the send-path idempotency lookup falls back to the legacy table when the shard has no
+     * matching {@code (sender_id, client_message_id)} row. The lookup misses on every new message,
+     * so the fallback costs a full extra query per send. Once backfill/verification reports
+     * {@code missing=0} every legacy row also exists in its shard, and the fallback can be turned
+     * off (the gray rollout's final step).
+     */
+    @org.springframework.beans.factory.annotation.Value(
+            "${chat.message-sharding.idempotency-fallback:${chat.message-sharding.read-fallback:true}}")
+    private boolean messageIdempotencyFallback = true;
+
+    @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.physical-enabled:false}")
+    private boolean physicalEnabled;
+
+    @Autowired(required = false)
+    private ChatMessageShardStore shardStore;
 
     /** Compatibility constructor for service-level tests and non-Spring callers. */
     public MessageServiceImpl(ChatMessageMapper messageMapper,
@@ -98,31 +113,39 @@ public class MessageServiceImpl implements MessageService {
                 pushRouter, recentMessageCache, contentModerationService, conversationRateLimiter,
                 sequenceAllocator, unreadService, chatMetrics, legalAgentFeignClient,
                 conversationIndexCache, new ChatMessageShardRouter(32), null);
-        this.messageShardingEnabled = false;
+        this.storageMode = ChatMessageStorageMode.LEGACY_ONLY;
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public MessageVO send(Long userId, MessageSendReqDTO request) {
         selectMessageShard(request.getSessionId());
         long sendStart = System.nanoTime();
         try {
             validateType(request.getType());
+            long counterpartyStart = System.nanoTime();
             Long recipientId = memberService.requireCounterparty(request.getSessionId(), userId);
+            chatMetrics.recordRequireCounterparty(counterpartyStart);
             boolean agentConversation = ChatConstants.AGENT_USER_ID == recipientId;
+            long findClientStart = System.nanoTime();
             ChatMessage existing = findByClientId(userId, request.getClientMessageId(), request.getSessionId());
+            chatMetrics.recordFindClient(findClientStart);
             if (existing != null) {
                 return toVO(existing);
             }
+            long rateLimitStart = System.nanoTime();
             if (!conversationRateLimiter.tryAcquire(request.getSessionId())) {
+                chatMetrics.recordRateLimit(rateLimitStart);
                 chatMetrics.incrementRateLimited();
                 throw new ServiceException("Conversation message rate limit exceeded",
                         ResultCode.INVALID_PARA.getCode());
             }
+            chatMetrics.recordRateLimit(rateLimitStart);
             ChatMessage message = new ChatMessage();
             message.setClientMessageId(request.getClientMessageId());
             message.setConversationId(request.getSessionId());
+            long sequenceStart = System.nanoTime();
             message.setConversationSeq(allocateConversationSequence(request.getSessionId()));
+            chatMetrics.recordSequence(sequenceStart);
             message.setSenderId(userId);
             message.setRecipientId(recipientId);
             message.setType(request.getType());
@@ -131,33 +154,24 @@ public class MessageServiceImpl implements MessageService {
             message.setVisited(ChatConstants.MESSAGE_NOT_VISITED);
             message.setCreatedAt(LocalDateTime.now());
             long dbStart = System.nanoTime();
+            MessageVO result;
             try {
                 try {
                     insertMessage(message);
                 } catch (DuplicateKeyException ex) {
                     return toVO(findRequiredByClientId(userId, request.getClientMessageId(), request.getSessionId()));
                 }
-                conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
-                        .eq(ChatConversation::getId, request.getSessionId())
-                        .set(ChatConversation::getLastMessageId, message.getId())
-                        .set(ChatConversation::getLastMessageSeq, message.getConversationSeq())
-                        .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
-                        .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
-                        .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
+                advanceLatestMessageAfterCommit(message);
+                result = toVO(message);
                 List<Long> affectedUsers = agentConversation
                         ? List.of(userId)
                         : List.of(userId, recipientId);
                 if (outboxService != null) {
-                    if (agentConversation) {
-                        outboxService.enqueueDerivedEvents(affectedUsers, false, null, toVO(message));
-                    } else {
-                        outboxService.enqueueMessageEvents(recipientId, affectedUsers, true, toVO(message));
-                    }
+                    enqueueOutboxBestEffort(result, recipientId, affectedUsers, agentConversation);
                 }
             } finally {
                 chatMetrics.recordDbWrite(dbStart);
             }
-            MessageVO result = toVO(message);
             if (agentConversation) {
                 dispatchAgentReplyAfterCommit(userId, request.getSessionId(), request.getContent());
             } else if (outboxService == null) {
@@ -171,7 +185,6 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public MessageVO sendAgentMessage(Long userId, AgentMessageReqDTO request) {
         selectMessageShard(request.getChatConversationId());
         try {
@@ -181,7 +194,19 @@ public class MessageServiceImpl implements MessageService {
             throw new ServiceException("Agent conversation does not exist", ResultCode.INVALID_PARA.getCode());
         }
         Long tenantId = conversation.getTenantUserId();
+        if (!tenantId.equals(userId)) {
+            throw new ServiceException("Agent conversation tenant mismatch", ResultCode.INVALID_PARA.getCode());
+        }
+        String deliveryKey = request.getRequestId() == null || request.getRequestId().isBlank()
+                ? java.util.UUID.randomUUID().toString() : request.getRequestId();
+        ChatMessage existing = findByClientId(ChatConstants.AGENT_USER_ID, deliveryKey,
+                request.getChatConversationId());
+        if (existing != null) {
+            return toVO(existing);
+        }
+        selectMessageShard(request.getChatConversationId());
         ChatMessage message = new ChatMessage();
+        message.setClientMessageId(deliveryKey);
         message.setConversationId(request.getChatConversationId());
         message.setConversationSeq(allocateConversationSequence(request.getChatConversationId()));
         message.setSenderId(ChatConstants.AGENT_USER_ID);
@@ -191,17 +216,20 @@ public class MessageServiceImpl implements MessageService {
         message.setStatus(ChatConstants.MESSAGE_UNREAD);
         message.setVisited(ChatConstants.MESSAGE_NOT_VISITED);
         message.setCreatedAt(LocalDateTime.now());
-        insertMessage(message);
-        conversationMapper.update(null, new LambdaUpdateWrapper<ChatConversation>()
-                .eq(ChatConversation::getId, request.getChatConversationId())
-                .set(ChatConversation::getLastMessageId, message.getId())
-                .set(ChatConversation::getLastMessageSeq, message.getConversationSeq())
-                .set(ChatConversation::getNextMessageSeq, message.getConversationSeq())
-                .set(ChatConversation::getLastMessageTime, toEpochMilli(message.getCreatedAt()))
-                .set(ChatConversation::getUpdatedAt, message.getCreatedAt()));
+        try {
+            insertMessage(message);
+        } catch (DuplicateKeyException ex) {
+            ChatMessage duplicate = findByClientId(ChatConstants.AGENT_USER_ID, deliveryKey,
+                    request.getChatConversationId());
+            if (duplicate != null) {
+                return toVO(duplicate);
+            }
+            throw ex;
+        }
+        advanceLatestMessageAfterCommit(message);
         MessageVO result = toVO(message);
         if (outboxService != null) {
-            outboxService.enqueueMessageEvents(tenantId, List.of(tenantId), true, result);
+            enqueueOutboxBestEffort(result, tenantId, List.of(tenantId), false);
         } else {
             publishPersistedMessage(tenantId, result);
         }
@@ -222,6 +250,10 @@ public class MessageServiceImpl implements MessageService {
         if (sequenceCursor == null && messageIdCursor == null) {
             return recentMessageCache.getRecent(request.getSessionId(), count,
                     () -> queryLatest(request.getSessionId(), ChatConstants.MAX_PAGE_SIZE));
+        }
+        if (physicalMessageRouting()) {
+            return listFromShard(request.getSessionId(), sequenceCursor, messageIdCursor,
+                    Boolean.TRUE.equals(request.getNeedCurMessage()), count);
         }
         LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getConversationId, request.getSessionId());
@@ -265,6 +297,9 @@ public class MessageServiceImpl implements MessageService {
             if (sequenceCursor == null && messageIdCursor == null) {
                 throw new ServiceException("A message sync cursor is required", ResultCode.INVALID_PARA.getCode());
             }
+            if (physicalMessageRouting()) {
+                return syncFromShard(request.getSessionId(), sequenceCursor, messageIdCursor, count);
+            }
             LambdaQueryWrapper<ChatMessage> query = new LambdaQueryWrapper<ChatMessage>()
                     .eq(ChatMessage::getConversationId, request.getSessionId());
             if (sequenceCursor != null) {
@@ -292,16 +327,12 @@ public class MessageServiceImpl implements MessageService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void markVisited(Long userId, MessageVisitedReqDTO request) {
         selectMessageShard(request.getSessionId());
         try {
         ChatConversationMember member = memberService.requireMember(request.getSessionId(), userId);
         unreadService.reset(userId, request.getSessionId());
-        ChatMessage latest = messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
-                .eq(ChatMessage::getConversationId, request.getSessionId())
-                .orderByDesc(ChatMessage::getConversationSeq)
-                .last("LIMIT 1"));
+        ChatMessage latest = latestMessage(request.getSessionId());
         memberMapper.update(null, new LambdaUpdateWrapper<ChatConversationMember>()
                 .eq(ChatConversationMember::getId, member.getId())
                 .set(ChatConversationMember::getUnreadCount, 0)
@@ -314,18 +345,22 @@ public class MessageServiceImpl implements MessageService {
                 latest == null ? null : latest.getConversationSeq()) != 1) {
             throw new ServiceException("User conversation index is incomplete");
         }
-        messageMapper.update(null, new LambdaUpdateWrapper<ChatMessage>()
-                .eq(ChatMessage::getConversationId, request.getSessionId())
-                .eq(ChatMessage::getRecipientId, userId)
-                .eq(ChatMessage::getVisited, ChatConstants.MESSAGE_NOT_VISITED)
-                .set(ChatMessage::getVisited, ChatConstants.MESSAGE_VISITED));
+        if (physicalMessageRouting()) {
+            shardStore.markVisited(request.getSessionId(), userId,
+                    ChatConstants.MESSAGE_NOT_VISITED, ChatConstants.MESSAGE_VISITED);
+        } else {
+            messageMapper.update(null, new LambdaUpdateWrapper<ChatMessage>()
+                    .eq(ChatMessage::getConversationId, request.getSessionId())
+                    .eq(ChatMessage::getRecipientId, userId)
+                    .eq(ChatMessage::getVisited, ChatConstants.MESSAGE_NOT_VISITED)
+                    .set(ChatMessage::getVisited, ChatConstants.MESSAGE_VISITED));
+        }
         } finally {
             ChatMessageShardContext.clear();
         }
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void markRead(Long userId, MessageReadReqDTO request) {
         selectMessageShard(request.getSessionId());
         try {
@@ -336,24 +371,72 @@ public class MessageServiceImpl implements MessageService {
         } catch (NumberFormatException ex) {
             throw new ServiceException("Invalid message ID", ResultCode.INVALID_PARA.getCode());
         }
-        messageMapper.update(null, new LambdaUpdateWrapper<ChatMessage>()
-                .eq(ChatMessage::getConversationId, request.getSessionId())
-                .eq(ChatMessage::getRecipientId, userId)
-                .in(ChatMessage::getId, ids)
-                .set(ChatMessage::getStatus, ChatConstants.MESSAGE_READ));
+        if (physicalMessageRouting()) {
+            shardStore.markRead(request.getSessionId(), userId, ids, ChatConstants.MESSAGE_READ);
+        } else {
+            messageMapper.update(null, new LambdaUpdateWrapper<ChatMessage>()
+                    .eq(ChatMessage::getConversationId, request.getSessionId())
+                    .eq(ChatMessage::getRecipientId, userId)
+                    .in(ChatMessage::getId, ids)
+                    .set(ChatMessage::getStatus, ChatConstants.MESSAGE_READ));
+        }
         } finally {
             ChatMessageShardContext.clear();
         }
     }
 
     private void selectMessageShard(Long conversationId) {
-        if (messageShardingEnabled) {
+        if (storageMode != ChatMessageStorageMode.LEGACY_ONLY) {
             ChatMessageShardContext.use(shardRouter.tableName(conversationId));
         }
     }
 
+    private boolean physicalMessageRouting() {
+        return physicalEnabled && storageMode != ChatMessageStorageMode.LEGACY_ONLY && shardStore != null;
+    }
+
+    private void insertShardPhysical(ChatMessage message) {
+        try {
+            shardStore.insert(message);
+        } catch (DuplicateKeyException ex) {
+            ChatMessage existing = shardStore.findByClientId(message.getConversationId(),
+                    message.getSenderId(), message.getClientMessageId());
+            if (existing == null || !message.getId().equals(existing.getId())) {
+                throw ex;
+            }
+        }
+    }
+
+    private ChatMessage latestMessage(Long conversationId) {
+        if (physicalMessageRouting()) {
+            return shardStore.selectLatest(conversationId);
+        }
+        return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getConversationId, conversationId)
+                .orderByDesc(ChatMessage::getConversationSeq)
+                .last("LIMIT 1"));
+    }
+
+    private List<MessageVO> listFromShard(Long conversationId, Long sequenceCursor, Long messageIdCursor,
+                                          boolean needCur, int count) {
+        List<ChatMessage> messages = sequenceCursor != null
+                ? shardStore.listBySeq(conversationId, sequenceCursor, needCur, count)
+                : shardStore.listById(conversationId, messageIdCursor, needCur, count);
+        List<MessageVO> result = new ArrayList<>(messages.stream().map(this::toVO).toList());
+        Collections.reverse(result);
+        return result;
+    }
+
+    private List<MessageVO> syncFromShard(Long conversationId, Long sequenceCursor, Long messageIdCursor,
+                                          int count) {
+        List<ChatMessage> messages = sequenceCursor != null
+                ? shardStore.syncBySeq(conversationId, sequenceCursor, count)
+                : shardStore.syncById(conversationId, messageIdCursor, count);
+        return messages.stream().map(this::toVO).toList();
+    }
+
     private boolean canFallbackToLegacy() {
-        return messageShardingEnabled && messageReadFallback
+        return storageMode != ChatMessageStorageMode.LEGACY_ONLY && messageReadFallback
                 && ChatMessageShardContext.currentTable() != null;
     }
 
@@ -414,14 +497,22 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private ChatMessage findByClientId(Long senderId, String clientMessageId, Long conversationId) {
-        if (conversationId == null || (!messageDualWrite && !messageShardingEnabled)) {
+        if (physicalMessageRouting() && conversationId != null) {
+            ChatMessage shardMessage = shardStore.findByClientId(conversationId, senderId, clientMessageId);
+            if (shardMessage != null || !messageIdempotencyFallback) {
+                return shardMessage;
+            }
+            return findByClientIdInTable(senderId, clientMessageId, null);
+        }
+        if (conversationId == null || storageMode != ChatMessageStorageMode.SHARD_ONLY) {
+            ChatMessageShardContext.clear();
             return messageMapper.selectOne(new LambdaQueryWrapper<ChatMessage>()
                     .eq(ChatMessage::getSenderId, senderId)
                     .eq(ChatMessage::getClientMessageId, clientMessageId));
         }
         ChatMessage shardMessage = findByClientIdInTable(senderId, clientMessageId,
                 shardRouter.tableName(conversationId));
-        if (shardMessage != null || messageDualWrite || !messageReadFallback) {
+        if (shardMessage != null || !messageIdempotencyFallback) {
             return shardMessage;
         }
         return findByClientIdInTable(senderId, clientMessageId, null);
@@ -443,7 +534,21 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private void insertMessage(ChatMessage message) {
-        if (!messageDualWrite) {
+        if (physicalMessageRouting()) {
+            if (storageMode == ChatMessageStorageMode.DUAL_WRITE) {
+                // Legacy first so the mapper assigns the snowflake id, then reuse it for the shard.
+                ChatMessageShardContext.clear();
+                messageMapper.insert(message);
+            }
+            insertShardPhysical(message);
+            return;
+        }
+        if (storageMode == ChatMessageStorageMode.LEGACY_ONLY) {
+            ChatMessageShardContext.clear();
+            messageMapper.insert(message);
+            return;
+        }
+        if (storageMode == ChatMessageStorageMode.SHARD_ONLY) {
             // The idempotency check (findByClientId) clears the shard context, so set it
             // again here; otherwise a sharding-only write would fall through to the legacy table.
             ChatMessageShardContext.use(shardRouter.tableName(message.getConversationId()));
@@ -527,6 +632,52 @@ public class MessageServiceImpl implements MessageService {
         return next;
     }
 
+    private void advanceLatestMessage(ChatMessage message) {
+        conversationMapper.advanceLatestMessage(message.getConversationId(), message.getId(),
+                message.getConversationSeq(), toEpochMilli(message.getCreatedAt()), message.getCreatedAt());
+    }
+
+    private void advanceLatestMessageAfterCommit(ChatMessage message) {
+        // Conversation metadata is updated out-of-band (eventual consistency): there is no
+        // distributed transaction tying it to the message write, and keeping the hot-row UPDATE on
+        // the send path would serialize every write to the same conversation. The UPDATE is
+        // idempotent (GREATEST/CASE guards monotonicity), so a late or lost update self-heals.
+        CompletableFuture.runAsync(() -> {
+            try {
+                advanceLatestMessage(message);
+            } catch (RuntimeException ex) {
+                log.error("Conversation metadata update failed, conversationId={}, messageId={}",
+                        message.getConversationId(), message.getId(), ex);
+            }
+        });
+    }
+
+    /**
+     * Best-effort outbox enqueue after the message is already durable in its shard. Without a
+     * distributed transaction the outbox write is not atomic with the message write, so a transient
+     * outbox failure must not fail the send: the client would retry and hit the idempotency check
+     * without re-enqueuing. The shard is the source of truth; push/unread/index side effects are
+     * eventual and reconciled by the shard verification/backfill jobs.
+     *
+     * <p>The enqueue itself is handed to the outbox service's bounded executor. It used to run
+     * inline on the send thread, which put a second main-database write (~65 ms under load) on the
+     * critical path behind the shard INSERT; the caller already holds a durable message, so the
+     * client response does not need to wait for the outbox row.
+     */
+    private void enqueueOutboxBestEffort(MessageVO message, Long recipientId,
+                                         List<Long> affectedUsers, boolean agentConversation) {
+        try {
+            if (agentConversation) {
+                outboxService.enqueueDerivedEventsAsync(affectedUsers, false, null, message);
+            } else {
+                outboxService.enqueueMessageEventsAsync(recipientId, affectedUsers, true, message);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Outbox enqueue failed after message persisted to shard, sessionId={}, messageId={}",
+                    message.getSessionId(), message.getMessageId(), ex);
+        }
+    }
+
     private MessageVO toVO(ChatMessage message) {
         MessageVO vo = new MessageVO();
         vo.setMessageId(String.valueOf(message.getId()));
@@ -547,13 +698,16 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private List<MessageVO> queryLatest(Long conversationId, int count) {
-        List<MessageVO> result = new ArrayList<>(messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
-                .eq(ChatMessage::getConversationId, conversationId)
-                .orderByDesc(ChatMessage::getConversationSeq)
-                .last("LIMIT " + count))
-                .stream()
-                .map(this::toVO)
-                .toList());
+        List<ChatMessage> messages;
+        if (physicalMessageRouting()) {
+            messages = shardStore.listLatest(conversationId, count);
+        } else {
+            messages = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                    .eq(ChatMessage::getConversationId, conversationId)
+                    .orderByDesc(ChatMessage::getConversationSeq)
+                    .last("LIMIT " + count));
+        }
+        List<MessageVO> result = new ArrayList<>(messages.stream().map(this::toVO).toList());
         Collections.reverse(result);
         return result;
     }

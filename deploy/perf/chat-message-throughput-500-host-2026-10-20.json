@@ -1,0 +1,151 @@
+{
+    "metrics": {
+        "http_req_duration": {
+            "med": 4.4412,
+            "max": 1359.218,
+            "p(90)": 433.47638,
+            "p(95)": 783.6306399999997,
+            "p(99)": 1212.081614,
+            "avg": 107.21467571040293,
+            "min": 0.5124,
+            "thresholds": {
+                "p(95)<500": true,
+                "p(99)<1200": true
+            }
+        },
+        "http_req_connecting": {
+            "p(95)": 0.5093999999999999,
+            "p(99)": 1.068218,
+            "avg": 0.05065665925376822,
+            "min": 0,
+            "med": 0,
+            "max": 7.3327,
+            "p(90)": 0
+        },
+        "http_reqs": {
+            "count": 4047,
+            "rate": 289.2148729509507
+        },
+        "iterations": {
+            "count": 4047,
+            "rate": 289.2148729509507
+        },
+        "data_sent": {
+            "count": 1324600,
+            "rate": 94661.2356587174
+        },
+        "http_req_receiving": {
+            "p(99)": 2.159358,
+            "avg": 0.1897751173708921,
+            "min": 0,
+            "med": 0,
+            "max": 40.4507,
+            "p(90)": 0.53164,
+            "p(95)": 0.5786499999999999
+        },
+        "http_req_waiting": {
+            "p(99)": 1212.081614,
+            "avg": 107.00526271312094,
+            "min": 0.5124,
+            "med": 4.3262,
+            "max": 1359.218,
+            "p(90)": 433.47638,
+            "p(95)": 783.6306399999997
+        },
+        "checks": {
+            "passes": 0,
+            "fails": 8094,
+            "thresholds": {
+                "rate>0.99": true
+            },
+            "value": 0
+        },
+        "http_req_failed": {
+            "passes": 4047,
+            "fails": 0,
+            "thresholds": {
+                "rate<0.01": true
+            },
+            "value": 1
+        },
+        "http_req_sending": {
+            "med": 0,
+            "max": 9.3909,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0.545308,
+            "avg": 0.01963787991104521,
+            "min": 0
+        },
+        "iteration_duration": {
+            "p(99)": 1212.081614,
+            "avg": 107.44381556708676,
+            "min": 0.5124,
+            "med": 4.6634,
+            "max": 1359.218,
+            "p(90)": 433.47638,
+            "p(95)": 783.8373099999999
+        },
+        "dropped_iterations": {
+            "count": 180,
+            "rate": 12.863522888848808,
+            "thresholds": {
+                "count<1": true
+            }
+        },
+        "vus": {
+            "value": 253,
+            "min": 0,
+            "max": 253
+        },
+        "vus_max": {
+            "value": 256,
+            "min": 256,
+            "max": 256
+        },
+        "http_req_tls_handshaking": {
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "data_received": {
+            "count": 817691,
+            "rate": 58435.48274725372
+        },
+        "http_req_blocked": {
+            "max": 7.3327,
+            "p(90)": 0,
+            "p(95)": 0.5141399999999999,
+            "p(99)": 1.090034,
+            "avg": 0.057838547071905104,
+            "min": 0,
+            "med": 0
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "HTTP 200": {
+                    "name": "HTTP 200",
+                    "path": "::HTTP 200",
+                    "id": "b70aee8a9f7a77d66dd70844a901558a",
+                    "passes": 0,
+                    "fails": 4047
+                },
+                "message persisted": {
+                    "path": "::message persisted",
+                    "id": "95ed910df559a649ff1a0a5c1fd41453",
+                    "passes": 0,
+                    "fails": 4047,
+                    "name": "message persisted"
+                }
+            }
+    }
+}

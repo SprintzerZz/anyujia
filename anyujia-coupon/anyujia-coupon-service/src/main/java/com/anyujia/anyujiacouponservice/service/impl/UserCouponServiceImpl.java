@@ -170,6 +170,8 @@ public class UserCouponServiceImpl implements UserCouponService {
         switch (result) {
             case SUCCESS -> {
             }
+            case REDIS_UNAVAILABLE -> throw new ServiceException(
+                    "领券服务繁忙，请稍后重试", ResultCode.ERROR.getCode());
             case OUT_OF_STOCK -> throw invalid("优惠券已领完");
             case ALREADY_RECEIVED -> throw invalid("每位用户限领一张");
             case USER_TYPE_MISMATCH -> throw invalid("当前身份或区域不适用该优惠券");

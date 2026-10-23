@@ -1688,6 +1688,152 @@ Git 状态：本轮新增了开发验证用离线 Dockerfile、当前 House sche
 
 模型服务必须固定模型版本并返回稳定 schema；上线前使用人工标注集计算混淆矩阵，分别校准高风险/普通风险阈值，模型超时、5xx、标签异常均必须降级并记录 trace，不得直接放行无证据法律结论。
 
+### 11.0.51 `/entailment` 本地模型服务部署
+
+#### 本轮改动
+
+- 新增 `deploy/embedding/app.py` 的 `POST /entailment` 协议，输入 `premise`、`hypothesis`、`model`，输出 `label`、`score`、`model`、`model_type`，与 Java `LocalLegalEntailmentScorer` 对齐。
+- 服务支持通过 `LEGAL_LOCAL_ENTAILMENT_MODEL` 配置独立 NLI CrossEncoder；配置后返回 `model_type=nli`，阈值为 `0.75`。
+- 未配置独立 NLI 模型时，使用已加载的 `BAAI/bge-reranker-v2-m3` 作为可观测的语义相关性代理，返回 `model_type=semantic-relevance-proxy`，阈值为 `0.85`。该模式仅用于开发联调和链路验证，不能作为生产法律 entailment 质量结论。
+- 修复 `deploy/dev/app/docker-compose-mid.yml` 的构建上下文：由不存在的 `./embedding` 改为实际目录 `../../embedding`。
+- 新增 `deploy/dev/app/docker-compose-entailment.yml`，启用 Legal 的本地 entailment 开关，并将容器内地址配置为 `http://frameworkjava-legal-embedding:18091/entailment`，避免使用容器内错误的 `127.0.0.1`。
+
+#### 当前部署验证
+
+- `python -m py_compile deploy/embedding/app.py`：通过。
+- Compose 配置解析：通过，服务包含 `frameworkjava-legal-embedding`，Legal endpoint 指向 embedding 容器。
+- Docker 构建：被本机 Docker Desktop 到 `registry-1.docker.io` 的 HTTPS 网络访问阻断，当前机器没有本地 Python 基础镜像，故容器尚未成功启动；不是应用代码构建错误。
+
+#### 启动命令
+
+```powershell
+cd deploy/dev/app
+docker compose -p frameworkjava -f docker-compose-mid.yml -f docker-compose-entailment.yml up -d --build frameworkjava-legal-embedding frameworkjava-legal
+Invoke-RestMethod http://localhost:18091/health
+Invoke-RestMethod -Method Post -Uri http://localhost:18091/entailment -ContentType 'application/json' -Body '{"premise":"租赁期间自然损耗由出租人承担","hypothesis":"正常使用造成的自然损耗不应由承租人承担"}'
+```
+
+#### 生产上线门槛
+
+当前 Docker 配置已完成服务协议和网络接线，但必须提供经过中文法律标注集校准的独立 NLI 模型，并将 `LEGAL_LOCAL_ENTAILMENT_MODEL` 固定为模型镜像内可复现版本；在此之前 Java 侧仍保留超时、异常和不可用降级，不应把代理分数写入生产质量指标。
+
+### 11.0.52 本轮安全收口：禁止把 reranker 当 entailment
+
+- Java `LocalLegalEntailmentScorer` 现在强制校验响应中的 `model_type=nli`；`semantic-relevance-proxy`、字段缺失或模型类型异常都会触发词面基线降级，不再标记为 `SEMANTIC_ENTAILMENT`。
+- `/embed`、`/rerank`、`/entailment` 增加请求长度、批量数量和空值校验，非法请求返回 HTTP 400，避免超长合同文本直接拖垮模型进程。
+- 本轮通过 `python -m py_compile deploy/embedding/app.py` 和 `git diff --check`；Docker 端到端验证仍受 Docker Desktop registry 代理阻断影响。
+
+### 11.0.53 P0：中文 NLI、超时熔断与冲突阻断
+
+- `/entailment` 默认模型切换为 `IDEA-CCNL/Erlangshen-Roberta-110M-NLI`，使用 `AutoModelForSequenceClassification` 输出 `CONTRADICTION/NEUTRAL/ENTAILMENT` 概率；模型卡明确标注为中文 NLI 模型，配置标签为 `CONTRADICTION=0`、`NEUTRAL=1`、`ENTAILMENT=2`。
+- Java 本地 NLI 客户端增加独立连接/读取超时（默认 1 秒/3 秒），接入现有 `LegalResilientCallExecutor` 的重试和 CircuitBreaker；模型服务异常时自动返回词面基线，不阻塞主链路。
+- 支持评估器新增冲突优先规则：任一证据返回 `CONTRADICTION` 时，忽略同一结论的正向候选，强制输出 `UNSUPPORTED + CONTRADICTION_BLOCKED`，避免错误证据被高分证据覆盖。
+- Java 编译和 `LegalConclusionSupportEvaluatorTest` 通过；真实模型下载和 Docker 运行仍需先恢复 Docker Desktop registry 代理。
+
+### 11.0.54 非 Docker 依赖优化：外部依赖熔断隔离
+
+- 修复 `LegalResilientCallExecutor` 忽略 `dependency` 参数的问题：现在按 `legal-entailment`、`legal-reranker`、`legal-embedding` 等依赖分别维护 CircuitBreaker，单个模型故障不会拖垮其他 AI 链路。
+- 对 HTTP 4xx 不再重试；线程中断会恢复中断标记并立即退出；网络/5xx 等瞬态异常仍保留有限重试和 fallback。
+- 新增 `LegalResilientCallExecutorTest`，验证依赖熔断隔离和 4xx 单次调用；测试 2/2 通过。
+
+### 11.0.55 外部依赖观测增强
+
+- `LegalResilientCallExecutor` 增加 Micrometer 指标：`legal.resilience.success`、`legal.resilience.fallback`、`legal.resilience.retry` 和 `legal.resilience.duration`，统一携带 `dependency` 标签。
+- `duration` 发布 P95/P99，能够区分 NLI、Reranker、Embedding 等依赖的耗时和降级比例；为后续 Prometheus 告警提供稳定指标面。
+- 本轮 Legal 模块编译通过，`git diff --check` 通过；现有外部依赖降级语义保持不变。
+
+### 11.0.56 Docker 模型部署与启动可用性优化
+
+- 已确认 Docker Desktop 本身运行正常；此前失败根因是 Docker daemon 访问 Docker Hub 未使用宿主机代理。将 daemon 代理改为宿主机可达地址后，`python:3.11-slim` 基础镜像和 `frameworkjava-legal-embedding:dev` 均已成功构建。
+- 新增 NLI 专用 Compose 覆盖配置：关闭 embedding/reranker 的大模型加载，避免 `/entailment` 首次启动被 BGE 模型阻塞；Legal 容器通过 `http://frameworkjava-legal-embedding:18091/entailment` 访问模型服务，已完成网络接线。
+- NLI 模型固定为 `IDEA-CCNL/Erlangshen-Roberta-110M-NLI`，使用真实中文 NLI 推理，不再把 reranker 相关性分数伪装为法律 entailment。
+- 模型服务改为后台加载：HTTP 进程可以先启动，`/health` 返回 `status=degraded、entailment_loading=true`，模型未就绪时 `/entailment` 明确返回 503，由 Java 侧超时/熔断/词面基线接管，避免首启下载拖垮整个 Legal 服务。
+- 当前实测：`/health` 可访问，返回 `embedding_enabled=false`、`reranker_enabled=false`、`entailment_model=IDEA-CCNL/Erlangshen-Roberta-110M-NLI`；NLI 权重正在通过标准 HuggingFace 下载通道缓存，下载完成后会自动切换为 `entailment_ready=true、model_type=nli`。
+
+#### 当前运行边界
+
+- 该部署 profile 专用于先验证法律 entailment 链路，暂不提供本地 `/embed` 和 `/rerank`；需要本地 RAG 向量/重排时，应单独部署 embedding/reranker profile，避免三类大模型争抢同一容器的启动时间和内存。
+- 模型首次下载受当前代理带宽影响，未完成前不能宣称真实 NLI 已可用；生产环境应将模型预置进镜像或内部模型仓库，启动时只做校验，不依赖公网下载。
+
+### 11.0.57 模型就绪探针与断点续传失败重试
+
+- 将模型服务探针拆分为存活语义和就绪语义：`/health` 只表示 HTTP 进程存活，并返回 `entailment_ready`、`entailment_loading`、`entailment_load_attempt`、`entailment_load_error`；新增 `/ready`，只有真实 NLI 模型加载完成才返回 200。
+- NLI 权重下载/加载失败时记录异常类型和截断错误信息，并自动进行最多 3 次重试；保留 HuggingFace cache 中的 `.incomplete` 文件，允许断点续传，避免每次容器重启从零下载。
+- 本轮实测捕获到真实失败原因：标准下载在已接收约 243MB 后发生 `IncompleteRead`，此前服务仍可能被 Docker liveness 判为 healthy；新增就绪探针后不会再把“进程存活”误判成“法律模型可用”。
+- 后续重试已完成模型加载：`/health` 返回 `entailment_ready=true、entailment_mode=nli`，`/ready` 返回 200；中文样例“租赁期间自然损耗由出租人承担”与“正常使用造成的自然损耗不应由承租人承担”返回 `CONTRADICTION`，score `0.8774`，`model_type=nli`。真实 NLI 链路已完成容器级验收。
+
+### 11.0.58 真实中文 NLI 模型并发基线
+
+#### 压测口径
+
+- 脚本：`deploy/perf/legal-entailment-load.js`。
+- 目标：本地 NLI 容器 `POST /entailment`，100 并发、1000 请求，3 组中文 premise/hypothesis，要求 HTTP 200、返回 `model_type=nli` 和有效 label。
+- 原始结果：`deploy/perf/results/legal-entailment-100v-1000-20261023-163013.json`。
+
+#### 实测结果
+
+| 指标 | 结果 |
+|---|---:|
+| 请求数 | 1000 |
+| NLI 正确响应 | 1000/1000 |
+| 错误率 | 0% |
+| 吞吐 | 15.87 req/s |
+| 平均延迟 | 6130.67 ms |
+| P50 | 5829.55 ms |
+| P95 | 8395.19 ms |
+| 最大延迟 | 11014.91 ms |
+
+#### 结论与下一步
+
+- 模型正确性和服务稳定性通过本轮基线，但 CPU 单实例在 100 并发下出现明显排队，不能把当前数据包装成生产容量或简历性能数据。
+- P0 应将 NLI 调用保持在异步 Agent Worker 内，禁止进入同步入队/SSE writer；Java 侧继续使用 3 秒读取超时和熔断，超过预算直接走安全降级。
+- P1 优化顺序：引入有界 NLI 请求队列和动态 batch；评估 ONNX Runtime/INT8 量化；再通过多个 NLI 副本横向扩展，并重新执行 100/500/1000 并发阶梯压测。
+- 下一轮必须同时采集模型容器 CPU、内存、队列深度、超时/熔断计数和 Java `legal.resilience.*` 指标；仅看 HTTP P95 无法判断是模型计算还是排队造成长尾。
+
+### 11.0.59 NLI 有界并发与过载保护
+
+- `/entailment` 增加 `LEGAL_ENTAILMENT_MAX_IN_FLIGHT` 和 `LEGAL_ENTAILMENT_QUEUE_TIMEOUT_MS`，当前开发配置为 8 个并发推理、最多等待 2.5 秒；超出容量返回 429 + `Retry-After: 1`，由 Java 熔断/降级链路接管。
+- 100 并发、1000 请求复测：1000 请求仍全部收到明确响应，848 个成功返回 NLI，152 个被容量保护拒绝；模型服务吞吐约 15.54 req/s，成功请求 P95 约 8.18s。
+- 该结果证明保护机制生效，避免无限排队和内存堆积，但没有解决 CPU 推理本身的长尾；下一阶段应做动态 batch、INT8/ONNX 和多副本扩展，不能仅继续扩大 semaphore。
+- 原始结果：`deploy/perf/results/legal-entailment-100v-1000-bounded-20261023-163445.json`。
+
+### 11.0.60 NLI 动态微批处理
+
+- 将单请求前向改为有界队列 + 动态微批：队列 64、batch size 8、等待窗口 20ms；同一批请求共享 tokenizer 和模型前向，队列满时仍返回 429，避免无限堆积。
+- 32 并发、320 请求复测：成功 265、容量拒绝 55，成功率 82.81%；总体吞吐约 14.93 req/s，P95 2.78s、P99 约 2.80s。相比上一轮 100 并发单请求推理 P95 8.40s，微批显著降低了可接受请求的长尾。
+- 当前主要瓶颈从“单请求推理排队”收敛为“队列容量与 CPU 模型吞吐”；不能简单继续扩大队列，否则会重新引入秒级等待。后续应通过 ONNX/INT8 或模型副本提升实际处理能力，并让 Agent Worker 根据 429 比例做自适应限流。
+- 原始结果：`deploy/perf/results/legal-entailment-32v-320-batch-20261023-163751.json`；8 并发小样本全部成功，P95 约 429ms，仅作为功能和低并发基线。
+
+### 11.0.61 CPU 动态 INT8 量化复测
+
+- 在 CPU 模式启用 PyTorch 动态 INT8 量化，仅量化 `Linear` 层；GPU 模式保持原始权重，避免改变 GPU 推理路径。
+- 同口径 32 并发、320 请求复测全部成功：320/320 返回 HTTP 200、`model_type=nli` 和有效 label，错误率 0%。
+- 吞吐提升至约 19.69 req/s，平均延迟 1.57s，P95 2.74s，P99 3.15s；相较未量化动态批处理的 14.93 req/s、P95 2.78s，吞吐提升约 31.9%，长尾略有改善。
+- 原始结果：`deploy/perf/results/legal-entailment-32v-320-int8-20261023-164105.json`。该结果仍是单机 CPU 开发环境基线，生产容量需在独立压测机和多副本条件下复测。
+
+### 11.0.62 INT8 阶梯压测：64 并发饱和点
+
+- 64 并发、640 请求复测：成功 560、容量拒绝 80，成功率 87.5%；总体吞吐约 22.27 req/s，成功请求 P95 约 3.90s，包含拒绝请求的整体 P95 约 4.59s。
+- 结果表明单实例 INT8 + batch size 8 在 32 并发附近仍可稳定运行，64 并发开始出现队列饱和；当前单实例建议生产保护阈值不超过 32 个并发请求，超出部分进入异步任务或由副本分摊。
+- 下一步不再继续扩大单实例队列，优先增加 NLI 副本/内部负载均衡，再执行 64/128 并发对比，确认横向扩展是否近似线性提升吞吐。
+- 原始结果：`deploy/perf/results/legal-entailment-64v-640-int8-20261023-164234.json`。
+
+### 11.0.63 NLI 双副本与内部负载均衡
+
+- 新增 `docker-compose-entailment-scale.yml`：两个 INT8 NLI 副本 + Nginx `least_conn` 内部负载均衡，外部仍保持 `18091` 端口；通过网络别名兼容现有 Legal endpoint `frameworkjava-legal-embedding`，无需改动 Java 配置即可切换。
+- 64 并发、640 请求复测：成功 629、容量拒绝 11，成功率 98.28%；吞吐提升至 32.18 req/s，整体 P95 2.67s、P99 约 2.76s。
+- 相较单实例 64 并发的 22.27 req/s、87.5% 成功率，双副本吞吐提升约 44.6%，拒绝数从 80 降至 11；但单机共享 CPU 仍不是生产容量结论，生产需按 CPU 核数、模型副本数和跨节点网络重新校准。
+- 两个模型副本均通过 `/ready`，网关 `/ready` 和 `/entailment` 验证通过；Legal 容器内解析旧服务名成功，完成兼容切换。
+- 原始结果：`deploy/perf/results/legal-entailment-64v-640-scale-20261023-164547.json`。
+
+### 11.0.64 HAProxy 主动健康检查与副本故障接管
+
+- 故障注入发现 Nginx 被动摘除后端存在延迟：停止一个副本时，32 并发故障窗口出现 70.62% 的 429，说明仅依赖被动连接失败不足以满足模型服务高可用要求。
+- 网关切换为 HAProxy，使用 `/ready` 主动健康检查、`leastconn`、`fall/rise` 和 `redispatch`；只有真实 NLI 就绪的副本才接收请求，故障副本自动摘除，恢复后自动加入。
+- 停止一个 NLI 副本后，剩余副本承载 32 并发、320 请求：成功率 100%，吞吐 24.34 req/s，P95 1.62s，P99 1.83s，未出现 429 或 NLI 标签错误。
+- 故障副本已恢复，网关 `/ready` 返回 200；当前双副本部署具备可验证的单实例故障接管能力。
+- 原始结果：`deploy/perf/results/legal-entailment-32v-320-haproxy-failover-20261023-164957.json`。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

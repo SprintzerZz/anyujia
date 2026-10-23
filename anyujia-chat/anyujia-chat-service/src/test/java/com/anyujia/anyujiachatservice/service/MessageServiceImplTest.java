@@ -32,6 +32,7 @@ import com.anyujia.anyujiachatservice.service.sequence.RedisConversationSequence
 import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardContext;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
+import com.anyujia.anyujiachatservice.sharding.ChatMessageStorageMode;
 import com.anyujia.anyujialegalapi.feign.LegalAgentFeignClient;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -89,7 +90,7 @@ class MessageServiceImplTest {
         request.setContent("hello");
         MessageVO result = service.send(10L, request);
 
-        verify(outbox).enqueueMessageEvents(20L, List.of(10L, 20L), true, result);
+        verify(outbox).enqueueMessageEventsAsync(20L, List.of(10L, 20L), true, result);
         verify(unreadService, never()).increment(any(), any());
         verify(indexCache, never()).touchMessageForUsers(any(), any(), any(), any(), any());
         verify(userConversationMapper, never()).touchMessageForUsers(any(), any(), any(), any(), any());
@@ -364,6 +365,33 @@ class MessageServiceImplTest {
         verify(pushRouter).route(10L, result);
     }
 
+    @Test
+    void repeatedAgentDeliveryKeyReturnsExistingMessageWithoutNewInsert() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        MessageService service = new MessageServiceImpl(messageMapper, conversationMapper,
+                mock(ChatConversationMemberMapper.class), mock(ChatUserConversationMapper.class),
+                mock(ConversationMemberService.class), mock(ChatMessagePublisher.class),
+                mock(RecentMessageCache.class), content -> content, ignored -> true,
+                mock(RedisConversationSequenceAllocator.class), mock(ChatUnreadService.class),
+                new ChatMetrics(new SimpleMeterRegistry()), mock(LegalAgentFeignClient.class),
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class));
+        when(conversationMapper.selectById(7L)).thenReturn(agentConversation(7L, 10L));
+        ChatMessage existing = message(200L, "已发送的答案");
+        existing.setClientMessageId("legal-agent-55");
+        existing.setSenderId(ChatConstants.AGENT_USER_ID);
+        when(messageMapper.selectOne(any())).thenReturn(existing);
+        AgentMessageReqDTO request = new AgentMessageReqDTO();
+        request.setChatConversationId(7L);
+        request.setContent("重试答案");
+        request.setRequestId("legal-agent-55");
+
+        MessageVO response = service.sendAgentMessage(10L, request);
+
+        assertThat(response.getContent()).isEqualTo("已发送的答案");
+        verify(messageMapper, never()).insert(any(ChatMessage.class));
+    }
+
     private ChatConversation agentConversation(Long id, Long tenantId) {
         ChatConversation conversation = new ChatConversation();
         conversation.setId(id);
@@ -407,8 +435,7 @@ class MessageServiceImplTest {
                 mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class),
                 new ChatMessageShardRouter(32), outbox);
 
-        ReflectionTestUtils.setField(service, "messageShardingEnabled", true);
-        ReflectionTestUtils.setField(service, "messageDualWrite", false);
+        ReflectionTestUtils.setField(service, "storageMode", ChatMessageStorageMode.SHARD_ONLY);
         ReflectionTestUtils.setField(service, "messageReadFallback", true);
 
         AtomicReference<String> tableDuringInsert = new AtomicReference<>();
@@ -430,5 +457,47 @@ class MessageServiceImplTest {
         service.send(10L, request);
 
         assertThat(tableDuringInsert.get()).isEqualTo("chat_message_s07");
+    }
+
+    @Test
+    void legacyOnlyWriteAndIdempotencyReadUseLegacyTable() {
+        ChatMessageMapper messageMapper = mock(ChatMessageMapper.class);
+        ChatConversationMapper conversationMapper = mock(ChatConversationMapper.class);
+        ConversationMemberService memberService = mock(ConversationMemberService.class);
+        RedisConversationSequenceAllocator sequenceAllocator = mock(RedisConversationSequenceAllocator.class);
+        MessageService service = new MessageServiceImpl(
+                messageMapper, conversationMapper, mock(ChatConversationMemberMapper.class),
+                mock(ChatUserConversationMapper.class), memberService, mock(ChatMessagePublisher.class),
+                mock(RecentMessageCache.class), content -> content, ignored -> true, sequenceAllocator,
+                mock(ChatUnreadService.class), new ChatMetrics(new SimpleMeterRegistry()),
+                mock(LegalAgentFeignClient.class),
+                mock(com.anyujia.anyujiachatservice.cache.ChatConversationIndexCache.class),
+                new ChatMessageShardRouter(32), mock(ChatMessageOutboxService.class));
+        ReflectionTestUtils.setField(service, "storageMode", ChatMessageStorageMode.LEGACY_ONLY);
+
+        AtomicReference<String> tableDuringLookup = new AtomicReference<>("unset");
+        AtomicReference<String> tableDuringInsert = new AtomicReference<>("unset");
+        when(memberService.requireCounterparty(7L, 10L)).thenReturn(20L);
+        when(sequenceAllocator.next(7L)).thenReturn(41L);
+        when(messageMapper.selectOne(any())).thenAnswer(invocation -> {
+            tableDuringLookup.set(ChatMessageShardContext.currentTable());
+            return null;
+        });
+        when(messageMapper.insert(any(ChatMessage.class))).thenAnswer(invocation -> {
+            tableDuringInsert.set(ChatMessageShardContext.currentTable());
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(100L);
+            return 1;
+        });
+
+        MessageSendReqDTO request = new MessageSendReqDTO();
+        request.setSessionId(7L);
+        request.setClientMessageId("legacy-only-1");
+        request.setType(0);
+        request.setContent("hello");
+        service.send(10L, request);
+
+        assertThat(tableDuringLookup.get()).isNull();
+        assertThat(tableDuringInsert.get()).isNull();
     }
 }

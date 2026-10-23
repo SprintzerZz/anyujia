@@ -72,6 +72,10 @@ services:
         exec redis-sentinel /tmp/sentinel.conf
 
   frameworkjava-chat:
+    networks:
+      frameworkjava_network:
+        aliases:
+          - anyujia-chat
     environment:
       MYSQL_USERNAME: appdev
       MYSQL_PASSWORD: change-me
@@ -79,3 +83,25 @@ services:
       NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-admin}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-change-me}
+
+  frameworkjava-legal:
+    networks:
+      frameworkjava_network:
+        aliases:
+          - anyujia-legal
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_USERNAME: appdev
+      MYSQL_PASSWORD: change-me
+      SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-change-me}
+
+  frameworkjava-house:
+    networks:
+      frameworkjava_network:
+        aliases:
+          - anyujia-house
+    environment:
+      MYSQL_USERNAME: appdev
+      MYSQL_PASSWORD: change-me
