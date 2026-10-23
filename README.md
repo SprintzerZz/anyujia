@@ -58,6 +58,31 @@ AnyuJia 是一个基于 Spring Cloud Alibaba 的租房平台后端项目，覆�
 - [`deploy/eval/legal-rag/README.md`](deploy/eval/legal-rag/README.md)
 - [`deploy/eval/legal-entailment/README.md`](deploy/eval/legal-entailment/README.md)
 
+## 即时聊天与消息可靠性
+
+Chat 模块面向租客与房东的实时沟通，采用 Spring WebSocket 与 Netty 双接入，消息事实以 MySQL 为准，Redis 保存高频状态，RabbitMQ 承载异步派生事件。
+
+主要能力：
+
+- 使用 Ticket 鉴权、Origin 校验和帧校验建立连接安全边界；Netty EventLoop 与独立业务线程池隔离网络事件和阻塞业务。
+- 使用连接级有界发送队列、写缓冲高低水位线、空闲连接回收和慢消费者关闭策略，避免单个慢客户端拖垮连接线程。
+- 通过 Redis Lua 原子分配 `conversationSeq`，结合 `clientMessageId` 幂等，支持超时重试而不重复落库。
+- 使用 1024 虚拟桶路由到 32 个逻辑 MySQL 分片，支持灰度迁移、历史回填、数据校验和分片回退。
+- 通过 Outbox、Claim Token、退避重试、DLQ 和重叠窗口对账，补偿消息已落库但异步事件缺失的场景。
+- 通过持久化 ACK、超时重推和 `/chat/message/sync` 断线补偿，形成“发送—落库—同步”的可恢复闭环。
+- 法律助手从聊天页面创建独立会话，绑定租客、房东原会话和合同，法律回答不会污染原始聊天记录。
+
+已记录的 Docker 开发环境验证结果：
+
+| 场景 | 结果 |
+| --- | --- |
+| Netty 650 VU 连接测试 | 握手/心跳成功率 100%，建连 P95 17.38ms，P99 65.69ms |
+| 热点会话 40 req/s | P99 从 603.81ms 降至 59.8ms，下降约 90% |
+| 10K 级消息一致性测试 | 10752 条消息发送、落库、同步回补数量一致，重复消息/序号/空洞均为 0 |
+| Worker 重启固定 ID 重试 | 30 条消息最终全部落库，无重复消息和重复序号 |
+
+以上数据来自单机 Docker 开发环境，用于说明实现和验证口径，不直接作为生产集群容量承诺。详细设计和边界见 [`deploy/data/IM-moudule-analysis.md`](deploy/data/IM-moudule-analysis.md) 与 [`deploy/data/im-resume2.0.md`](deploy/data/im-resume2.0.md)。
+
 ## 可靠性与性能验证
 
 项目包含聊天、优惠券和法律 Agent 的评估与压测脚本，重点覆盖幂等、重试、断线恢复、租约接管、证据一致性和模型服务故障转移。
