@@ -12,4 +12,5 @@ public class LegalConclusionSupportVO {
     private String supportLevel;
     private List<Integer> citationIndexes;
     private String reason;
+    private String supportMethod;
 }

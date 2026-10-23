@@ -1669,6 +1669,25 @@ Git 状态：本轮新增了开发验证用离线 Dockerfile、当前 House sche
 - 当前 Agent 仍只有 `CONTEXT_AND_EVIDENCE` 一个可执行阶段，阶段级接口和数据结构已准备好，但合同解析、聊天压缩、RAG、生成、发布仍需逐步拆成独立 checkpoint。
 - entailment 评估器目前是离线质量门禁，不自动改变线上回答；生产接入前需要律师标注集、模型版本锁定、阈值校准、混淆矩阵和高风险样本强制人工审核。
 
+### 11.0.51 本轮接入语义级法律 Entailment Scorer
+
+已将语义支持度从离线评估器接入 Java Agent 在线回答链路：
+
+- 新增 `LegalEntailmentScorer` 抽象和本地 HTTP 适配器，向 `LEGAL_LOCAL_ENTAILMENT_ENDPOINT` 发送 `premise=法规证据`、`hypothesis=Agent结论`、`model`，解析 `ENTAILMENT/CONTRADICTION/UNKNOWN + score`。
+- `LegalConclusionSupportEvaluator` 优先使用语义模型，按配置阈值输出 `SUPPORTED/PARTIAL/UNSUPPORTED`；回答 VO 同时返回 `supportMethod=SEMANTIC_ENTAILMENT` 或 `LEXICAL_BASELINE`，保证结果可审计。
+- 语义服务不可用时熔断当前 scorer 并回退词面基线，不阻断 Agent 主链路；低支持度仍进入 `WAITING_REVIEW`，不会绕过人工审核。
+- 默认关闭远程 entailment，启用方式为配置 `LEGAL_LOCAL_ENTAILMENT_ENABLED=true`，并部署实现 `/entailment` 协议的本地模型服务。当前开发环境未部署该模型，因此本轮 Java 回归验证使用安全降级路径。
+
+#### 验证结果
+
+- Java 17 Legal 聚合编译通过。
+- `LegalConclusionSupportEvaluatorTest`、Agent 一致性测试、Controller 测试通过。
+- 未配置模型时返回 `LEXICAL_BASELINE`，没有把 reranker 相关性分数伪装成 entailment 分数。
+
+#### 生产接入要求
+
+模型服务必须固定模型版本并返回稳定 schema；上线前使用人工标注集计算混淆矩阵，分别校准高风险/普通风险阈值，模型超时、5xx、标签异常均必须降级并记录 trace，不得直接放行无证据法律结论。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`

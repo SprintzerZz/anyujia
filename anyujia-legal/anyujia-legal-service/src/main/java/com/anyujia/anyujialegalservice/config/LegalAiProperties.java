@@ -40,6 +40,8 @@ public class LegalAiProperties {
     @Valid
     private LocalReranker localReranker = new LocalReranker();
     @Valid
+    private LocalEntailment localEntailment = new LocalEntailment();
+    @Valid
     private Agent agent = new Agent();
 
     @Data
@@ -131,6 +133,19 @@ public class LegalAiProperties {
         @Min(1)
         @Max(50)
         private int topN = 8;
+    }
+
+    @Data
+    public static class LocalEntailment {
+        private boolean enabled;
+        @NotBlank
+        private String endpoint = "http://127.0.0.1:18091/entailment";
+        @NotBlank
+        private String model = "BAAI/bge-nli-base-zh";
+        @DecimalMin("0.0")
+        private double supportedThreshold = 0.75D;
+        @DecimalMin("0.0")
+        private double partialThreshold = 0.45D;
     }
 
     @Data

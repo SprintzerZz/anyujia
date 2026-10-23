@@ -155,6 +155,12 @@ legal:
       enabled: ${LEGAL_LOCAL_RERANKER_ENABLED:false}
       endpoint: ${LEGAL_LOCAL_RERANKER_ENDPOINT:http://127.0.0.1:18091/rerank}
       model: ${LEGAL_LOCAL_RERANKER_MODEL:BAAI/bge-reranker-v2-m3}
+    local-entailment:
+      enabled: ${LEGAL_LOCAL_ENTAILMENT_ENABLED:false}
+      endpoint: ${LEGAL_LOCAL_ENTAILMENT_ENDPOINT:http://127.0.0.1:18091/entailment}
+      model: ${LEGAL_LOCAL_ENTAILMENT_MODEL:BAAI/bge-nli-base-zh}
+      supported-threshold: ${LEGAL_LOCAL_ENTAILMENT_SUPPORTED_THRESHOLD:0.75}
+      partial-threshold: ${LEGAL_LOCAL_ENTAILMENT_PARTIAL_THRESHOLD:0.45}
       top-n: ${LEGAL_RERANK_TOP_N:8}
 
 management.endpoints.web.exposure.include: health,info,metrics
