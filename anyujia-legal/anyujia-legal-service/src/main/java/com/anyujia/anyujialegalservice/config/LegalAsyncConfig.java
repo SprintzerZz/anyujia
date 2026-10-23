@@ -79,6 +79,21 @@ public class LegalAsyncConfig {
         return executor;
     }
 
+    @Bean(name = "legalAgentChatDeliveryExecutor")
+    public Executor legalAgentChatDeliveryExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(16);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("legal-chat-delivery-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(awaitTerminationSeconds);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        registerExecutorMetrics("chat-delivery", executor);
+        return executor;
+    }
+
     /**
      * A shared scheduler keeps SSE connections from consuming one long-lived
      * business thread each. The task only performs a short status read and

@@ -2,13 +2,16 @@ package com.anyujia.anyujialegalservice.service;
 
 import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
+import com.anyujia.anyujiahouseapi.domain.vo.HousePublishVO;
 import com.anyujia.anyujiachatapi.feign.ChatFeignClient;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalCitationVO;
+import com.anyujia.anyujialegalapi.domain.vo.LegalConclusionSupportVO;
 import com.anyujia.anyujialegalservice.config.LegalAiProperties;
 import com.anyujia.anyujialegalservice.domain.entity.LegalAgentConversation;
 import com.anyujia.anyujialegalservice.domain.entity.LegalContract;
+import com.anyujia.anyujialegalservice.domain.model.AgentHistory;
 import com.anyujia.anyujialegalservice.domain.model.LawPassage;
 import com.anyujia.anyujialegalservice.domain.model.LegalAnswerGeneration;
 import com.anyujia.anyujialegalservice.domain.model.RiskFinding;
@@ -17,16 +20,21 @@ import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import java.time.LocalDate;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
+import java.util.Optional;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LegalAgentService {
     private static final int MAX_GROUNDING_LENGTH = 24000;
+    private static final Pattern CONTRACT_BLOCK_ID = Pattern.compile("\\[contract_block id=([^ ]+)");
 
     private final LegalAgentConversationService conversationService;
     private final LegalContractMapper contractMapper;
@@ -41,18 +49,55 @@ public class LegalAgentService {
     private final LegalAgentContextVersionService contextVersionService;
     private final LegalAiProperties properties;
     private final ChatFeignClient chatFeignClient;
+    private final LegalConclusionSupportEvaluator supportEvaluator;
+
+    @Autowired
+    public LegalAgentService(LegalAgentConversationService conversationService,
+                             LegalContractMapper contractMapper, ChatEvidenceProvider chatEvidenceProvider,
+                             RentalProductEvidenceProvider productEvidenceProvider,
+                             LegalKnowledgeRetriever knowledgeRetriever, LegalAnswerGenerator answerGenerator,
+                             LegalContractContextCompressor contractContextCompressor,
+                             LegalChatContextCompressor chatContextCompressor,
+                             LegalAgentMemoryService memoryService, LegalAgentHistoryCompressor agentHistoryCompressor,
+                             LegalAgentContextVersionService contextVersionService, LegalAiProperties properties,
+                             ChatFeignClient chatFeignClient, LegalConclusionSupportEvaluator supportEvaluator) {
+        this.conversationService = conversationService;
+        this.contractMapper = contractMapper;
+        this.chatEvidenceProvider = chatEvidenceProvider;
+        this.productEvidenceProvider = productEvidenceProvider;
+        this.knowledgeRetriever = knowledgeRetriever;
+        this.answerGenerator = answerGenerator;
+        this.contractContextCompressor = contractContextCompressor;
+        this.chatContextCompressor = chatContextCompressor;
+        this.memoryService = memoryService;
+        this.agentHistoryCompressor = agentHistoryCompressor;
+        this.contextVersionService = contextVersionService;
+        this.properties = properties;
+        this.chatFeignClient = chatFeignClient;
+        this.supportEvaluator = supportEvaluator;
+    }
+
+    public LegalAgentService(LegalAgentConversationService conversationService,
+                             LegalContractMapper contractMapper, ChatEvidenceProvider chatEvidenceProvider,
+                             RentalProductEvidenceProvider productEvidenceProvider,
+                             LegalKnowledgeRetriever knowledgeRetriever, LegalAnswerGenerator answerGenerator,
+                             LegalContractContextCompressor contractContextCompressor,
+                             LegalChatContextCompressor chatContextCompressor,
+                             LegalAgentMemoryService memoryService, LegalAgentHistoryCompressor agentHistoryCompressor,
+                             LegalAgentContextVersionService contextVersionService, LegalAiProperties properties,
+                             ChatFeignClient chatFeignClient) {
+        this(conversationService, contractMapper, chatEvidenceProvider, productEvidenceProvider, knowledgeRetriever,
+                answerGenerator, contractContextCompressor, chatContextCompressor, memoryService,
+                agentHistoryCompressor, contextVersionService, properties, chatFeignClient,
+                new LegalConclusionSupportEvaluator());
+    }
 
     public LegalAgentAnswerVO answer(Long tenantId, LegalAgentAnswerReqDTO request) {
         LegalAgentConversation binding = requireBinding(tenantId, request.getChatConversationId());
-        LegalContract contract = contractMapper.selectOne(new LambdaQueryWrapper<LegalContract>()
-                .eq(LegalContract::getId, binding.getContractId())
-                .eq(LegalContract::getTenantId, tenantId));
-        if (contract == null) {
-            throw new ServiceException("合同不存在", ResultCode.TOKEN_CHECK_FAILED.getCode());
-        }
-        String grounding = groundingContext(tenantId, binding, contract, request.getQuery());
+        EvidenceSnapshot before = evidenceSnapshot(tenantId, binding, request.getQuery());
+        String grounding = before.grounding();
         LegalAgentContextVersionService.ContextVersion contextVersion = contextVersionService.recordVersion(
-                tenantId, binding.getChatConversationId(), grounding);
+                tenantId, binding.getChatConversationId(), before.sourceFingerprint());
         if (contextVersion.status() == LegalAgentContextVersionService.ChangeStatus.CHANGED) {
             grounding = "[context_version changed=true; favor_latest_evidence]\n" + grounding;
         }
@@ -62,24 +107,42 @@ public class LegalAgentService {
                 ? LocalDate.now() : LocalDate.parse(request.getAsOfDate());
         List<LawPassage> passages = knowledgeRetriever.retrieve(request.getQuery(), regionCode, asOfDate, 5);
         LegalAnswerGeneration generation = answerGenerator.generateGrounded(request.getQuery(), passages, grounding);
-        LegalAgentContextVersionService.ContextVersion finalContextVersion = contextVersionService.recordVersion(
-                tenantId, binding.getChatConversationId(), groundingContext(
-                        tenantId, binding, contract, request.getQuery()));
-        boolean contextConflict = !contextVersion.hash().equals(finalContextVersion.hash());
-
-        memoryService.appendTurn(tenantId, request.getChatConversationId(), "user", request.getQuery());
-        memoryService.appendTurn(tenantId, request.getChatConversationId(), "assistant", generation.answer());
-        injectReply(tenantId, request.getChatConversationId(), generation.answer());
+        EvidenceSnapshot after = evidenceSnapshot(tenantId, binding, request.getQuery());
+        boolean contextConflict = !before.consistencyFingerprint().equals(after.consistencyFingerprint());
 
         LegalAgentAnswerVO vo = new LegalAgentAnswerVO();
-        vo.setAnswerText(generation.answer());
-        vo.setCitations(citations(generation.citationIndexes(), passages));
+        vo.setAnswerText(contextConflict ? "分析期间合同、聊天或房源信息发生变化，请重新提问以获取最新风险判断。" : generation.answer());
+        vo.setCitations(contextConflict ? List.of() : citations(generation.citationIndexes(), passages));
+        List<LegalConclusionSupportVO> supports = contextConflict ? List.of()
+                : supportEvaluator.evaluate(generation.answer(), vo.getCitations());
+        vo.setConclusionSupports(supports);
+        vo.setReviewRequired(supportEvaluator.minimumScore(supports).doubleValue() < 0.30D);
         vo.setMode(generation.mode());
         vo.setDegraded(generation.degraded());
         vo.setContextHash(contextVersion.hash());
         vo.setContextStatus(contextConflict ? "STALE_CONTEXT" : contextVersion.status().name());
         vo.setContextConflict(contextConflict);
+        Map<String, Object> manifest = new LinkedHashMap<>(before.manifest());
+        manifest.put("regionCode", regionCode);
+        manifest.put("asOfDate", asOfDate.toString());
+        manifest.put("chatModel", properties.getChatModel());
+        manifest.put("promptVersion", "grounded-v1");
+        manifest.put("lawPassages", passages.stream().map(passage -> Map.of(
+                "chunkId", String.valueOf(passage.chunkId()),
+                "sourceId", String.valueOf(passage.sourceId()),
+                "textSha256", contextVersionService.sha256(passage.text()))).toList());
+        vo.setEvidenceManifest(manifest);
         return vo;
+    }
+
+    /** Only publish a committed, non-stale answer. */
+    public void publishAnswer(Long tenantId, LegalAgentAnswerReqDTO request, LegalAgentAnswerVO answer) {
+        if (answer.isContextConflict()) {
+            return;
+        }
+        memoryService.appendTurn(tenantId, request.getChatConversationId(), "user", request.getQuery());
+        memoryService.appendTurn(tenantId, request.getChatConversationId(), "assistant", answer.getAnswerText());
+        injectReply(tenantId, request.getChatConversationId(), answer.getAnswerText());
     }
 
     public void notifyAssessmentCompleted(Long contractId, List<RiskFinding> findings) {
@@ -110,25 +173,69 @@ public class LegalAgentService {
         return binding;
     }
 
-    private String groundingContext(Long tenantId, LegalAgentConversation binding, LegalContract contract,
-                                    String query) {
+    private EvidenceSnapshot evidenceSnapshot(Long tenantId, LegalAgentConversation binding, String query) {
+        LegalContract contract = contractMapper.selectOne(new LambdaQueryWrapper<LegalContract>()
+                .eq(LegalContract::getId, binding.getContractId())
+                .eq(LegalContract::getTenantId, tenantId));
+        if (contract == null) {
+            throw new ServiceException("合同不存在", ResultCode.TOKEN_CHECK_FAILED.getCode());
+        }
+        List<MessageVO> messages = chatEvidenceProvider.freshMessages(
+                tenantId, binding.getLandlordConversationId(), 100);
+        Optional<HousePublishVO> product = productEvidenceProvider.snapshot(
+                tenantId, binding.getLandlordConversationId());
         StringBuilder result = new StringBuilder("[contract]\n");
-        result.append(contractContextCompressor.build(contract.getId(), contract.getExtractedText(), query))
+        result.append(contractContextCompressor.build(contract.getId(), contract.getExtractedText(), query, 12000))
                 .append('\n');
         result.append("[landlord_messages]\n");
-        List<MessageVO> messages = chatEvidenceProvider.recentMessages(tenantId, binding.getLandlordConversationId(), 100);
-        result.append(chatContextCompressor.build(tenantId, messages, query)).append('\n');
-        result.append(agentHistoryCompressor.build(
-                memoryService.getHistory(tenantId, binding.getChatConversationId()))).append('\n');
+        result.append(chatContextCompressor.build(tenantId, messages, query, 6000)).append('\n');
+        List<AgentHistory.Turn> history = memoryService.getHistory(tenantId, binding.getChatConversationId());
+        result.append(agentHistoryCompressor.build(history)).append('\n');
         result.append("[rental_product]\n");
-        productEvidenceProvider.snapshot(tenantId, binding.getLandlordConversationId()).ifPresent(product -> {
-            result.append("depositMonths=").append(product.getDepositMonths()).append('\n');
-            result.append("monthlyRent=").append(product.getMonthlyRent()).append('\n');
-            result.append("paymentCycleMonths=").append(product.getPaymentCycleMonths()).append('\n');
-            result.append("description=").append(product.getDescription()).append('\n');
+        product.ifPresent(value -> {
+            result.append("depositMonths=").append(value.getDepositMonths()).append('\n');
+            result.append("monthlyRent=").append(value.getMonthlyRent()).append('\n');
+            result.append("paymentCycleMonths=").append(value.getPaymentCycleMonths()).append('\n');
+            result.append("description=").append(bounded(value.getDescription(), 1600)).append('\n');
         });
-        return bounded(result.toString(), MAX_GROUNDING_LENGTH);
+        StringBuilder sources = new StringBuilder();
+        sources.append(contract.getId()).append('|').append(contract.getSha256()).append('|')
+                .append(contract.getUpdatedAt()).append('|').append(contract.getExtractedText());
+        for (MessageVO message : messages) {
+            sources.append('|').append(message.getMessageId()).append(':')
+                    .append(message.getConversationSeq()).append(':').append(message.getContent());
+        }
+        product.ifPresent(value -> sources.append('|').append(value.getPublishId()).append(':')
+                .append(value.getMonthlyRent()).append(':').append(value.getDepositMonths()).append(':')
+                .append(value.getPaymentCycleMonths()).append(':').append(value.getDescription()));
+        for (AgentHistory.Turn turn : history) {
+            sources.append('|').append(turn.getRole()).append(':').append(turn.getContent());
+        }
+        String sourceFingerprint = contextVersionService.sha256(sources.toString());
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("tenantId", tenantId);
+        manifest.put("agentConversationId", binding.getChatConversationId());
+        manifest.put("landlordConversationId", binding.getLandlordConversationId());
+        manifest.put("contractId", contract.getId());
+        manifest.put("contractSha256", contract.getSha256());
+        manifest.put("contractUpdatedAt", String.valueOf(contract.getUpdatedAt()));
+        List<String> selectedBlockIds = new java.util.ArrayList<>();
+        Matcher selectedBlocks = CONTRACT_BLOCK_ID.matcher(result);
+        while (selectedBlocks.find()) {
+            selectedBlockIds.add(selectedBlocks.group(1));
+        }
+        manifest.put("selectedContractBlockIds", selectedBlockIds);
+        manifest.put("chatMessageIds", messages.stream().map(MessageVO::getMessageId).toList());
+        manifest.put("chatConversationSeqs", messages.stream().map(MessageVO::getConversationSeq).toList());
+        manifest.put("productPublishId", product.map(HousePublishVO::getPublishId).orElse(null));
+        manifest.put("sourceFingerprint", sourceFingerprint);
+        return new EvidenceSnapshot(bounded(result.toString(), MAX_GROUNDING_LENGTH),
+                sourceFingerprint, contextVersionService.sha256(sources.append('|').append(result).toString()),
+                manifest);
     }
+
+    private record EvidenceSnapshot(String grounding, String sourceFingerprint,
+                                    String consistencyFingerprint, Map<String, Object> manifest) { }
 
     private List<LegalCitationVO> citations(List<Integer> indexes, List<LawPassage> passages) {
         if (indexes == null) {

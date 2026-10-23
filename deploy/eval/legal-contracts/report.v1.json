@@ -1,0 +1,76 @@
+{
+  "dataset": "legal-contracts",
+  "version": "v1",
+  "case_count": 6,
+  "passed": 6,
+  "failed": 0,
+  "results": [
+    {
+      "id": "contract-01-normal",
+      "file": "contract-01-normal.txt",
+      "risk_level": "LOW",
+      "source_chars": 420,
+      "must_find_count": 4,
+      "missing_terms": [],
+      "noise_count": 1,
+      "missing_noise": [],
+      "valid": true
+    },
+    {
+      "id": "contract-02-damage-triple-compensation",
+      "file": "contract-02-damage-triple-compensation.txt",
+      "risk_level": "HIGH",
+      "source_chars": 456,
+      "must_find_count": 4,
+      "missing_terms": [],
+      "noise_count": 0,
+      "missing_noise": [],
+      "valid": true
+    },
+    {
+      "id": "contract-03-furniture-depreciation-no-limit",
+      "file": "contract-03-furniture-depreciation-no-limit.txt",
+      "risk_level": "HIGH",
+      "source_chars": 428,
+      "must_find_count": 4,
+      "missing_terms": [],
+      "noise_count": 0,
+      "missing_noise": [],
+      "valid": true
+    },
+    {
+      "id": "contract-04-landlord-unilateral-rights",
+      "file": "contract-04-landlord-unilateral-rights.txt",
+      "risk_level": "HIGH",
+      "source_chars": 444,
+      "must_find_count": 4,
+      "missing_terms": [],
+      "noise_count": 0,
+      "missing_noise": [],
+      "valid": true
+    },
+    {
+      "id": "contract-05-conflict-and-noise",
+      "file": "contract-05-conflict-and-noise.txt",
+      "risk_level": "HIGH",
+      "source_chars": 554,
+      "must_find_count": 5,
+      "missing_terms": [],
+      "noise_count": 5,
+      "missing_noise": [],
+      "valid": true
+    },
+    {
+      "id": "contract-06-security-deposit-and-cleaning-fee",
+      "file": "contract-06-security-deposit-and-cleaning-fee.txt",
+      "risk_level": "HIGH",
+      "source_chars": 454,
+      "must_find_count": 4,
+      "missing_terms": [],
+      "noise_count": 0,
+      "missing_noise": [],
+      "valid": true
+    }
+  ],
+  "note": "Fixture integrity only; not a legal correctness assessment."
+}

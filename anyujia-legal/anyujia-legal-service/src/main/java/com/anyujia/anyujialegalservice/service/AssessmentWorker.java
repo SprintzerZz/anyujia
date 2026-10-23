@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,13 +49,29 @@ public class AssessmentWorker {
     private final LegalTraceService traceService;
     private final AssessmentContextSnapshotService contextSnapshotService;
     private final LegalAgentService legalAgentService;
+    @Value("${legal.assessment.lease-seconds:1800}")
+    private long leaseSeconds;
 
     public void execute(Long jobId) {
-        LegalAssessmentJob job = jobMapper.selectById(jobId);
-        if (job == null || !LegalConstants.JOB_PENDING.equals(job.getStatus())) {
+        String workerId = UUID.randomUUID().toString();
+        LocalDateTime now = LocalDateTime.now();
+        // Claim atomically so duplicate dispatches and expired workers cannot run concurrently by accident.
+        int claimed = jobMapper.update(null, new LambdaUpdateWrapper<LegalAssessmentJob>()
+                .eq(LegalAssessmentJob::getId, jobId)
+                .and(wrapper -> wrapper
+                        .eq(LegalAssessmentJob::getStatus, LegalConstants.JOB_PENDING)
+                        .or()
+                        .eq(LegalAssessmentJob::getStatus, LegalConstants.JOB_RUNNING)
+                        .lt(LegalAssessmentJob::getLeaseUntil, now))
+                .set(LegalAssessmentJob::getStatus, LegalConstants.JOB_RUNNING)
+                .set(LegalAssessmentJob::getLeaseOwner, workerId)
+                .set(LegalAssessmentJob::getLeaseUntil, now.plusSeconds(leaseSeconds))
+                .setSql("attempt_count = COALESCE(attempt_count, 0) + 1")
+                .set(LegalAssessmentJob::getUpdatedAt, now));
+        if (claimed == 0) {
             return;
         }
-        updateStatus(jobId, LegalConstants.JOB_RUNNING, null, null, null);
+        LegalAssessmentJob job = jobMapper.selectById(jobId);
         LegalTraceEvent runTrace = traceService.start(jobId, "ASSESSMENT_RUN",
                 details("tenantId", job.getTenantId(), "contractId", job.getContractId(),
                         "regionCode", job.getRegionCode(), "asOfDate", job.getAsOfDate()));
@@ -158,7 +176,8 @@ public class AssessmentWorker {
             String summary = findings.isEmpty()
                     ? "未命中当前规则库中的明显风险，仍建议签约前人工核对合同。"
                     : "共识别 " + findings.size() + " 项风险；结果为辅助信息，不构成法律意见。";
-            updateStatus(jobId, LegalConstants.JOB_COMPLETED, summary, null, LocalDateTime.now());
+            ensureLease(jobId, workerId);
+            updateStatus(jobId, workerId, LegalConstants.JOB_COMPLETED, summary, null, LocalDateTime.now());
             traceService.success(runTrace, details("finalRiskCount", findings.size(),
                     "contextSnapshotId", contextSnapshot.getId(),
                     "contextHash", contextSnapshot.getContextHash(),
@@ -166,7 +185,7 @@ public class AssessmentWorker {
             legalAgentService.notifyAssessmentCompleted(contract.getId(), findings);
         } catch (Exception ex) {
             log.error("Legal assessment failed, jobId={}", jobId, ex);
-            updateStatus(jobId, LegalConstants.JOB_FAILED, null, safeMessage(ex), LocalDateTime.now());
+            updateStatus(jobId, workerId, LegalConstants.JOB_FAILED, null, safeMessage(ex), LocalDateTime.now());
             traceService.failure(runTrace, ex, details("status", LegalConstants.JOB_FAILED));
         }
     }
@@ -289,10 +308,14 @@ public class AssessmentWorker {
         return item;
     }
 
-    private void updateStatus(Long jobId, String status, String summary, String error, LocalDateTime completedAt) {
+    private void updateStatus(Long jobId, String workerId, String status, String summary,
+                              String error, LocalDateTime completedAt) {
         LambdaUpdateWrapper<LegalAssessmentJob> update = new LambdaUpdateWrapper<LegalAssessmentJob>()
                 .eq(LegalAssessmentJob::getId, jobId)
+                .eq(LegalAssessmentJob::getLeaseOwner, workerId)
                 .set(LegalAssessmentJob::getStatus, status)
+                .set(LegalAssessmentJob::getLeaseOwner, null)
+                .set(LegalAssessmentJob::getLeaseUntil, null)
                 .set(LegalAssessmentJob::getUpdatedAt, LocalDateTime.now());
         if (summary != null) {
             update.set(LegalAssessmentJob::getSummary, summary);
@@ -304,6 +327,18 @@ public class AssessmentWorker {
             update.set(LegalAssessmentJob::getCompletedAt, completedAt);
         }
         jobMapper.update(null, update);
+    }
+
+    private void ensureLease(Long jobId, String workerId) {
+        int renewed = jobMapper.update(null, new LambdaUpdateWrapper<LegalAssessmentJob>()
+                .eq(LegalAssessmentJob::getId, jobId)
+                .eq(LegalAssessmentJob::getStatus, LegalConstants.JOB_RUNNING)
+                .eq(LegalAssessmentJob::getLeaseOwner, workerId)
+                .set(LegalAssessmentJob::getLeaseUntil, LocalDateTime.now().plusSeconds(leaseSeconds))
+                .set(LegalAssessmentJob::getUpdatedAt, LocalDateTime.now()));
+        if (renewed == 0) {
+            throw new IllegalStateException("评估任务租约已被其他 worker 接管");
+        }
     }
 
     private String safeMessage(Exception ex) {

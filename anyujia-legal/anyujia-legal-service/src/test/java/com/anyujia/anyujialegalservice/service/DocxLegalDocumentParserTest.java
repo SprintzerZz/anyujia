@@ -22,7 +22,8 @@ class DocxLegalDocumentParserTest {
             content = output.toByteArray();
         }
 
-        ParsedDocument parsed = new DocxLegalDocumentParser(new LegalDocumentProperties()).parse(content);
+        ParsedDocument parsed = new DocxLegalDocumentParser(new LegalDocumentProperties(),
+                new TikaLegalDocumentExtractor()).parse(content);
 
         assertThat(parsed.documentType()).isEqualTo("DOCX");
         assertThat(parsed.blocks()).extracting(block -> block.pageNumber()).containsExactly(1, 2);

@@ -23,6 +23,7 @@
         <lombok.version>1.18.38</lombok.version>
         <pdfbox.version>3.0.5</pdfbox.version>
         <poi.version>5.4.1</poi.version>
+        <tika.version>3.3.1</tika.version>
         <milvus-sdk-java.version>2.6.22</milvus-sdk-java.version>
     </properties>
     <dependencyManagement>

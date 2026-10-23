@@ -18,6 +18,10 @@ public class LegalAssessmentJob {
     private String regionCode;
     private LocalDate asOfDate;
     private String status;
+    private Integer attemptCount;
+    private String leaseOwner;
+    private LocalDateTime leaseUntil;
+    private LocalDateTime nextRunAt;
     private String summary;
     private String errorMessage;
     private LocalDateTime createdAt;

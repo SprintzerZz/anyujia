@@ -37,4 +37,4 @@ python deploy/eval/legal-context/evaluate.py `
   --output deploy/eval/legal-context/report.json
 ```
 
-预测文件每行包含 `case_id`、`selected_evidence_ids`、`facts`，可选 `context_status`、`conflict_flag` 和 `history_reference`。
+预测文件必须为每个 case 恰好提供一行，包含 `case_id`、`selected_evidence_ids`、`facts`、`context_status`、`semantic_conflict` 和 `history_reference`。`semantic_conflict` 指合同与聊天的事实冲突，不等同于任务分析期间的 `context_conflict`（上下文变更）。缺失字段不能通过评估。

@@ -576,7 +576,7 @@ event-publish-pool   结果事件发布
 
 ### 11.0.7 本轮第八阶段已完成：本地真实租户压测结果
 
-本轮使用本地开发环境构造了专用压测身份：租户 ID `900001`，登录态按项目 `login:token:<token>` Redis 格式写入，Token 未写入代码或报告；同时在数据库预创建 1000 个 `PENDING` Agent 任务作为 SSE 长连接池。压测完成后已删除全部测试任务、Outbox、事件和临时 Token。
+本轮使用本地开发环境构造了专用压测身份：租户 ID `<tenant-id>`，登录态按项目 `login:token:<token>` Redis 格式写入，Token 未写入代码或报告；同时在数据库预创建 1000 个 `PENDING` Agent 任务作为 SSE 长连接池。压测完成后已删除全部测试任务、Outbox、事件和临时 Token。
 
 #### SSE 长连接结果
 
@@ -644,14 +644,14 @@ event-publish-pool   结果事件发布
 
 #### 完整链路结果
 
-使用临时真实格式开发 Token 写入 Redis `login:token:<token>`，Token 仅用于本次验证，完成后已删除；租户身份为 `userId=900001,userType=1,userFrom=app`。
+使用临时真实格式开发 Token 写入 Redis `login:token:<token>`，Token 仅用于本次验证，完成后已删除；租户身份为 `userId=<tenant-id>,userType=1,userFrom=app`。
 
 | 验证项 | 实测结果 |
 | --- | ---: |
 | Gateway 端口 | 18080，启动成功 |
 | Nacos gRPC | 9848 连接成功 |
 | Gateway 鉴权 | 通过 |
-| Legal 任务提交 | HTTP 200，任务 ID `2113179781457973249` |
+| Legal 任务提交 | HTTP 200，任务 ID `<task-id>` |
 | Gateway 转发到 Legal | 通过 |
 | SSE 响应类型 | `text/event-stream` |
 | SSE 首事件 | `event:connected / data:ok` |
@@ -661,7 +661,7 @@ event-publish-pool   结果事件发布
 
 ### 11.0.10 本轮第十一阶段：Gateway 高并发 SSE 与入队复测
 
-本阶段使用有效聊天会话 `910000000000000031` 作为上下文，临时租户 Token 仅写入本地 Redis，未进入代码或报告；压测结束后已删除 47,865 个测试任务、Outbox、事件和 Token，并移除临时 Gateway/Legal 容器。
+本阶段使用有效聊天会话 `<conversation-id>` 作为上下文，临时租户 Token 仅写入本地 Redis，未进入代码或报告；压测结束后已删除测试任务、Outbox、事件和 Token，并移除临时 Gateway/Legal 容器。
 
 #### Gateway SSE 长连接
 
@@ -1530,6 +1530,124 @@ python deploy/eval/legal-context/evaluate.py `
 
 当前可以进入下一阶段的离线质量评估：把实际压缩器输出转换为 `predictions.jsonl`，执行证据召回率、事实召回率、无关证据误选率和上下文状态准确率对比。在线 Docker 链路仍需在迁移 V32/V33 执行后重新启动并进行一次真实任务冒烟，不能仅用离线测试替代数据库迁移验证。
 
+### 11.0.42 本轮第四十三阶段：证据复核与过期答案阻断
+
+此前 `LegalAgentService.answer` 在生成前后对压缩文本取 hash，但复核沿用首次读取的合同对象，聊天窗口可能来自 Redis 缓存；即便检测到 `STALE_CONTEXT`，仍会把模型答案写入 Agent 历史及 Chat。现改为：
+
+- 生成前、生成后分别重新读取租户合同、绕过缓存读取 Chat 消息、重新取房源快照；证据指纹覆盖原始合同内容、消息 ID/序号/全文、房源关键字段、Agent 历史与实际选入的上下文。
+- 生成后指纹不一致时只返回重新提问提示，清空旧答案引用，设置 `STALE_CONTEXT/contextConflict=true`，不发布旧模型答案。
+- 历史压缩先为最近轮次预留预算，旧轮次预览不再挤掉最新问题；合同、聊天、历史分别限额，减少末尾整段截断。
+- Redis 版本服务的单次故障不再永久关闭本实例后续版本检测。
+
+Chat/房源远端调用失败现在会中止本次分析，不再伪装成空证据。边界：当前复核仍是跨服务两次读取，不是合同、Chat、房源和法律库的原子快照；法律库更新的并发版本校验仍待补充。
+
+### 11.0.43 本轮第四十四阶段：完成后可靠投递与 Chat 幂等
+
+此前任务完成前直接发送 Chat，租约丢失或 DB 完成更新失败可能造成“任务未完成但用户已收到答案”。现将异步任务的 Chat 投递从生成方法移出：
+
+- `V34__legal_agent_chat_delivery.sql` 在任务表增加投递状态、领取时间及索引；只有 `COMPLETED` 且无上下文冲突的任务可原子领取投递。
+- 任务完成后把投递交给独立、有界的 Chat delivery 执行器，不阻塞 Agent 生成工作线程；定时扫描补偿失败发送，超时领取可接管。执行器队列满时任务仍留在 MySQL 待投递状态，下轮扫描继续处理。
+- Chat 消息请求新增可选 `requestId`，异步投递固定使用 `legal-agent-{taskId}`；Chat 以现有 `(sender_id, client_message_id)` 唯一键返回已存在消息，重复投递不产生第二条消息，并校验会话租户与请求用户一致。
+- Agent 历史在 Chat 成功返回后再追加。旧同步 `/agent/answer` 仍为直发路径，不享有任务级持久化投递保证，生产入口建议统一走任务/SSE。
+
+部署顺序：先升级 Chat API/Service 使幂等键生效，再执行 V34，最后升级 Legal Service。仅部署 Legal 新代码而未执行迁移会导致任务映射/投递 SQL 失败。
+
+### 11.0.44 本轮第四十五阶段：任务证据清单与离线评估收紧
+
+- `V35__legal_agent_evidence_manifest.sql` 增加 `evidence_manifest_json`；答案和任务持久化合同 ID/hash/更新时间、聊天消息 ID 与序号、房源 ID、法律片段 ID、地区/日期、模型与提示词版本，便于复盘“答案基于哪批材料”。清单只保存来源元数据，不重复写入合同和聊天全文。
+- 离线评估器现在要求每个 case 恰好一条预测、必需字段齐全且引用 ID 真正存在；缺失状态不再被算作匹配。将“合同/聊天语义冲突”与“分析期间上下文变化”明确区分。
+- 目前仍只有 7 例数据集格式校验和定向单测，**没有把实际 Java Agent 输出接入评估，也没有端到端质量得分**。下一阶段需补真实预测生成、人工标注复核、法律主张到原文的逐条支持度校验，以及提示注入/跨租户/过期法条用例。
+
+本轮验证：Chat 与 Legal 模块聚合编译成功；Chat 定向回归 11/11、Legal 定向回归 7/7，覆盖过期合同答案阻断、最近历史优先、任务幂等投递及 Chat 重复请求；7 例离线数据集校验通过，空预测文件会被拒绝。开发机为 Java 26，项目当前 Byte Buddy 版本需在测试进程设置 `-Dnet.bytebuddy.experimental=true`，未改动生产 JVM 参数。Docker daemon 当前无法连接（`dockerDesktopLinuxEngine` 管道不存在），**V34/V35 尚未在 Docker MySQL 执行，故不能宣称线上链路已验收或新的容量/SLO 已达标。**生成前后各取一次 Chat/房源证据会增加远端调用次数，需重测问答 P95/P99。
+
+Git 状态：仓库原有大量未提交改动，且 Chat 实现与测试文件包含非本轮的物理分片改动；为避免把现有工作混入本轮中文提交，暂未自动暂存/提交。需要先按文件与 hunk 拆分既有改动后再提交。
+
+### 11.0.45 本轮 Docker 在线验证：真实租户、Agent 任务、SSE 与 Chat 幂等
+
+本轮 Docker 已启动后，补齐并验证了上一轮暂停的在线链路。测试使用开发环境专用租户和合同数据，未使用生产数据：
+
+- 执行 V32、V33、V34、V35 Legal 迁移；同时补齐开发库缺失的 House V10、V11 字段，使法律 Agent 能读取房源快照。
+- 使用真实运行中的 Chat、Legal、House、Gateway、Nacos、MySQL、Redis 和 RabbitMQ 容器，创建租客私有 Agent 会话 `<agent-conversation-id>`。
+- 通过 Legal API 提交开发任务 `<smoke-request-id>`，任务 ID 为 `<task-id>`；状态从 `PENDING` 完成到 `COMPLETED`，上下文状态为 `CHANGED`，未发生上下文冲突。
+- 任务表验证：`chat_delivery_state=2`，`evidence_manifest_json` 为有效 JSON，包含合同 hash、合同 ID、房源发布 ID、租户、法规区域、时点、模型和提示词版本等元数据。
+- SSE 验证通过：返回 `event:connected/data:ok`，随后返回 `event:result`，结果中包含 `contextHash`、`contextStatus`、`contextConflict` 和 `evidenceManifest`；任务完成后连接正常结束。
+- Chat 幂等验证通过：首次投递得到 message ID `<message-id>`，使用同一 `requestId=legal-agent-<task-id>` 重试仍返回同一 message ID，Agent 会话中只保留一条对应消息。
+- 同一测试中先故意验证了房源服务发现缺少 `anyujia-house` 别名导致的失败任务，随后补齐 Docker 网络别名并重跑成功；失败任务保留为可审计记录，没有被覆盖。
+
+本轮任务最终回答为 `NO_EVIDENCE` 降级结果，原因是当前开发法规库未检索到足够的法规片段。该结果证明“任务持久化、证据清单、SSE 通知和幂等投递”链路正常，但不代表法律回答质量已完成生产验收；后续仍需使用有效法规版本和真实冻结评估集验证 citation coverage、事实支持度与端到端质量。
+
+部署补充：原始 Temurin 基础镜像在本机无法从 Docker Hub 拉取，本轮开发验证使用本地缓存的 Maven Temurin 17 镜像构建 Legal、Chat 和 House 镜像；该 Dockerfile 仅用于离线开发验证，生产镜像仍应使用正式 JRE 17 构建链。Docker Compose 期间发现的空 House 临时容器已清理，无数据卷挂载。
+
+Git 状态：本轮新增了开发验证用离线 Dockerfile、当前 House schema 兼容的 Legal Agent smoke 数据脚本，并更新本报告；仓库原有大量未提交改动，仍未将不同阶段改动混合提交。
+
+### 11.0.46 本轮新增：合同风险与噪点测试集
+
+新增 `deploy/eval/legal-contracts/` 合成合同测试集，共 6 份文本合同和 1 份 JSONL 清单，专门验证 Apache Tika 解析、合同 block 定位、风险条款识别、无关噪点过滤以及合同/聊天事实冲突：
+
+- 正常合同基线：押金退还、自然损耗、维修责任和入户通知。
+- 损坏赔偿异常：故意加入“损坏任何物品按原价三倍赔偿、出租人单方估价、不得提出异议”等高风险条款。
+- 家具折旧异常：故意加入“无论使用年限均按全新价收取 100% 折旧费”和长期扣留押金等条款。
+- 出租人单方权利：故意加入随时涨租、随时入户、没收押金和完全排除出租人责任等条款。
+- 合同/聊天冲突：合同租金、维修、宠物和清洁费与聊天承诺不一致，同时加入天气、会议室、订单号等无关噪点。
+- 清洁费和押金异常：故意加入不可退清洁费、无期限押金、时间成本和退出管理费等费用条款。
+
+清单为每份合同声明风险等级、必须识别的关键事实、期望风险标签和噪点内容，便于生成 predictions 并接入离线评估。6 条清单记录已通过 JSONL 格式校验。所有合同均为合成测试数据，不代表真实合同或法律意见；评估结果应要求 Agent 使用审慎措辞，不能仅凭测试条款断言“必然无效”。
+
+### 11.0.47 本轮新增：合同风险样本可执行评估
+
+本轮将合同样本从静态文本升级为可执行评估集：
+
+- 新增 `deploy/eval/legal-contracts/evaluate_contracts.py`，校验每份合同的必需风险条款、声明噪点和风险等级元数据。
+- 6 份合成合同全部通过完整性校验：`case_count=6`、`passed=6`、`failed=0`。
+- 覆盖正常基线、损坏三倍赔偿、家具全新价折旧、房东单方权利、合同/聊天冲突、清洁费和押金异常六类场景。
+- 通过 Legal 模块 `DocxLegalDocumentParserTest`、`PdfLegalDocumentParserTest` 和 `LegalDocumentParsingServiceTest` 定向回归，确认现有 Apache Tika/PDF/DOCX 解析链路保持通过。
+
+当前评估器属于“样本输入完整性门禁”，只确认测试条款和噪点存在，不判断具体条款的法律效力。下一步可将这些文本转换为 PDF/DOCX 样本并接入真实上传接口，比较原文与 Tika 输出的字符、block、定位和风险关键词召回率。
+
+### 11.0.48 本轮生产级 Agent 能力增强：Checkpoint、Trace、韧性调用与法规版本过滤
+
+针对通用 Agent 项目暴露的工程化差距，本轮完成第一版增量增强：
+
+1. **阶段 checkpoint**：新增 `V36__legal_agent_stage_checkpoint.sql` 和 `legal_agent_stage_checkpoint` 表，记录任务阶段、状态、尝试次数、输入指纹、输出摘要、错误和时间；当前已接入 `CONTEXT_AND_EVIDENCE` 阶段，后续可继续拆分合同解析、聊天分析、房源核对、RAG、生成和发布阶段。
+2. **OpenTelemetry 链路**：新增 API-only `LegalTelemetry`，围绕 Agent 阶段创建 `legal.agent.*` span，并写入 `legal.task_id`；Exporter 由部署环境决定，未配置 Exporter 时不影响业务执行。
+3. **工具调用韧性**：新增 `LegalResilientCallExecutor`，对 Chat、房源快照等 Feign 调用统一提供有限重试、熔断和 fallback 边界；原有 Feign 默认连接/读取超时继续保留，外部证据缺失仍会显式失败，不伪装为空证据。
+4. **RAG 评分与版本治理**：词法通道升级为 BM25 风格评分，加入词频、逆文档频率和文档长度归一化；法规检索继续按区域、ACTIVE 状态、生效起止日期过滤，并对同一标题/区域的重叠版本优先选择最新 `effective_from` 版本，同时增加版本过滤索引。
+
+#### 验证结果
+
+- Legal 服务 Java 17 聚合打包成功。
+- Chat 证据适配、Legal RAG 检索和上下文版本定向测试通过。
+- Docker MySQL 已执行 V36，checkpoint 表和法规版本索引存在。
+- Docker 在线任务 `<phase-request-id>`（taskId=`<task-id>`）从 `PENDING` 完成到 `COMPLETED`；数据库中存在 `CONTEXT_AND_EVIDENCE=COMPLETED`、`attempt_count=1` 的 checkpoint。
+- 本轮任务仍返回 `NO_EVIDENCE` 降级回答，原因是开发法规库没有命中足够依据；这验证了降级和任务可靠性，不代表法律回答质量已完成验收。
+
+#### 当前边界
+
+本轮 checkpoint 仍是第一阶段骨架，尚未把每个 Agent 步骤拆成独立可重放节点；OpenTelemetry 仅完成埋点 API 接入，尚未在部署环境配置 Collector、Trace UI 和采样策略；韧性执行器的默认熔断参数仍需按 Chat/House/AI/Milvus 分依赖配置。下一阶段应完成阶段级恢复、独立 replay、OTel Collector 接入和真实法规版本冲突评估。
+
+### 11.0.49 本轮 P0/P1：长期记忆、失败重放、人工审核与逐条证据支持度
+
+本轮继续补齐生产 Agent 的闭环能力，新增 `V37__legal_agent_memory_review_support.sql`：
+
+1. **MemorySnapshot 长期记忆**：新增 `legal_agent_memory_snapshot`，按租户和法律助手独立会话持久化摘要、事实 JSON、上下文指纹、版本号和 30 天过期时间。Redis 短期记忆为空、重启丢失或不可用时自动恢复快照，避免上下文完全归零；正常写入 Redis 时同步更新快照。
+2. **失败阶段重放与任务 replay**：失败任务提供 `/legal/agent/tasks/{taskId}/replay`，仅允许 `FAILED` 状态原子恢复为 `PENDING` 并新增 Outbox 事件；重跑会重新领取租约，阶段 checkpoint 的 `attempt_count` 累加，保留失败原因和重试轨迹，不覆盖原任务 ID。
+3. **人工审核/确认节点**：当逐条结论最低证据支持度低于 `0.30` 时，任务进入 `WAITING_REVIEW`，写入 `legal_agent_review` 并发送 `approval_required` SSE 事件；内部审核端通过 `/review/approve` 才发布 `result` 和 Chat 消息，拒绝则发布 `failed`，避免低证据法律结论直接触达租客。
+4. **法律结论逐条支持度评估**：新增 `LegalConclusionSupportEvaluator`，按答案句/条款结论逐条匹配 citation allow-list，输出 `SUPPORTED/PARTIAL/UNSUPPORTED`、支持分数、引用索引和可审计原因；不产生新 citation，无法找到证据时明确标记为 `UNSUPPORTED`。
+
+#### 验证结果
+
+- Java 17 生产编译通过：`mvn -f anyujia-legal/pom.xml -pl anyujia-legal-service -am -Dmaven.test.skip=true package -q`。
+- Legal Agent 一致性、Controller 访问控制、历史压缩和逐条证据支持度定向测试通过；新增测试验证“有引用的结论可支持、无引用的结论必须标记 UNSUPPORTED”。
+- 任务状态新增 `WAITING_REVIEW`，回放和审核接口均保留租户/内部服务边界；人工通过后才触发 SSE `result` 和 Chat 幂等投递。
+- Docker 开发库已执行 V37，确认 `legal_agent_memory_snapshot`、`legal_agent_review`、`legal_agent_stage_checkpoint` 三张表和 `legal_agent_task.review_required` 字段存在；Legal 容器使用最新 JAR 启动并完成 Tomcat 18086、Redis Stream 订阅初始化。
+
+#### 当前边界
+
+- 当前 MemorySnapshot 是摘要/事实快照，不是完整对话归档；后续应增加快照压缩版本、冲突合并和按合同/会话范围的事实过期策略。
+- replay 当前以整个任务重放为主，checkpoint 已保留阶段状态但还未开放“从指定阶段继续”的 API；下一步应支持 `stage` 参数和阶段输入指纹校验。
+- 人工审核队列已落库并有状态门禁，但还缺少审核列表、超时升级、多人抢占租约和审核审计报表。
+- 支持度评估当前是可审计的确定性词面基线，不能替代法律专家语义判断；生产验收仍需接入人工标注集、法规条文级 entailment 评估，并把阈值按风险等级配置。
+
 ## 12. 参考文件
 
 - `anyujia-legal/README.md`
@@ -1552,4 +1670,6 @@ python deploy/eval/legal-context/evaluate.py `
 - `deploy/dev/app/mysql/migration/V13__legal_context_snapshot.sql`
 - `deploy/dev/app/mysql/migration/V17__legal_agent_conversation.sql`
 - `deploy/dev/app/mysql/migration/V27__legal_assessment_lease_and_trace_archive.sql`
+- `deploy/dev/app/mysql/migration/V36__legal_agent_stage_checkpoint.sql`
+- `deploy/dev/app/mysql/migration/V37__legal_agent_memory_review_support.sql`
 

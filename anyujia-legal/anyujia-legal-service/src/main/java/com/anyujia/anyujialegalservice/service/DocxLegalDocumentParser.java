@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class DocxLegalDocumentParser implements LegalDocumentParser {
     private static final byte[] ZIP_MAGIC = {'P', 'K', 3, 4};
     private final LegalDocumentProperties limits;
+    private final TikaLegalDocumentExtractor tikaExtractor;
 
     @Override
     public boolean supports(String filename, byte[] content) {
@@ -34,19 +35,22 @@ public class DocxLegalDocumentParser implements LegalDocumentParser {
     @Override
     public ParsedDocument parse(byte[] content) {
         try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(content))) {
-            List<ParsedBlock> blocks = new ArrayList<>();
-            StringBuilder fullText = new StringBuilder();
+            // Tika is the canonical content extraction path. POI is used only to recover
+            // DOCX-specific evidence locators that Tika does not expose reliably.
+            TikaLegalDocumentExtractor.Extraction extraction = tikaExtractor.extract(content);
+            String fullText = extraction.text();
+            if (fullText.isBlank()) {
+                throw invalid("DOCX 未提取到可分析文本");
+            }
+            List<DocxLocator> locators = new ArrayList<>();
             int pageHint = 1;
             int paragraphIndex = 0;
             for (IBodyElement element : document.getBodyElements()) {
                 if (element instanceof XWPFParagraph paragraph) {
                     String text = normalize(paragraph.getText());
                     if (!text.isBlank()) {
-                        int start = append(fullText, text);
-                        blocks.add(new ParsedBlock(blocks.size(), pageHint, paragraphIndex,
-                                "DOCX_PAGE_HINT", isHeading(paragraph) ? text : null,
-                                text, start, start + text.length()));
-                        enforceLimits(blocks.size(), fullText.length());
+                        locators.add(new DocxLocator(pageHint, paragraphIndex,
+                                isHeading(paragraph) ? text : null, text));
                     }
                     paragraphIndex++;
                     if (containsSavedPageBreak(paragraph)) {
@@ -55,18 +59,18 @@ public class DocxLegalDocumentParser implements LegalDocumentParser {
                 } else if (element instanceof XWPFTable table) {
                     String text = normalize(table.getText());
                     if (!text.isBlank()) {
-                        int start = append(fullText, text);
-                        blocks.add(new ParsedBlock(blocks.size(), pageHint, paragraphIndex++,
-                                "DOCX_PAGE_HINT", null, text, start, start + text.length()));
-                        enforceLimits(blocks.size(), fullText.length());
+                        locators.add(new DocxLocator(pageHint, paragraphIndex++, null, text));
                     }
                 }
             }
-            if (fullText.toString().isBlank()) {
-                throw invalid("DOCX 未提取到可分析文本");
+            List<ParsedBlock> blocks = toBlocks(fullText, locators);
+            if (blocks.isEmpty()) {
+                blocks = List.of(new ParsedBlock(0, 1, 0, "DOCX_PAGE_HINT", null,
+                        fullText, 0, fullText.length()));
             }
+            enforceLimits(blocks.size(), fullText.length());
             return new ParsedDocument("DOCX", pageHint, "DOCX_PAGE_HINT",
-                    fullText.toString(), List.copyOf(blocks));
+                    fullText, List.copyOf(blocks));
         } catch (ServiceException ex) {
             throw ex;
         } catch (IOException | RuntimeException ex) {
@@ -90,13 +94,23 @@ public class DocxLegalDocumentParser implements LegalDocumentParser {
                 .replaceAll("\\s+", " ").trim();
     }
 
-    private int append(StringBuilder target, String text) {
-        if (!target.isEmpty()) {
-            target.append('\n');
+    private List<ParsedBlock> toBlocks(String fullText, List<DocxLocator> locators) {
+        List<ParsedBlock> blocks = new ArrayList<>();
+        int searchFrom = 0;
+        for (DocxLocator locator : locators) {
+            int start = fullText.indexOf(locator.text(), searchFrom);
+            if (start < 0) {
+                // Tika may normalize a table or field differently from POI. Keep the locator
+                // usable while preserving Tika's full text as the canonical source.
+                start = Math.min(searchFrom, fullText.length());
+            }
+            int end = Math.min(fullText.length(), start + locator.text().length());
+            String blockText = start < fullText.length() ? fullText.substring(start, end) : locator.text();
+            blocks.add(new ParsedBlock(blocks.size(), locator.pageNumber(), locator.paragraphIndex(),
+                    "DOCX_PAGE_HINT", locator.heading(), blockText, start, end));
+            searchFrom = Math.max(searchFrom, end);
         }
-        int start = target.length();
-        target.append(text);
-        return start;
+        return blocks;
     }
 
     private void enforceLimits(int blockCount, int characters) {
@@ -111,5 +125,8 @@ public class DocxLegalDocumentParser implements LegalDocumentParser {
 
     private String safeMessage(Exception ex) {
         return ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+    }
+
+    private record DocxLocator(int pageNumber, int paragraphIndex, String heading, String text) {
     }
 }

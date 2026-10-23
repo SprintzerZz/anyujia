@@ -19,12 +19,13 @@ import com.anyujia.anyujialegalservice.service.LegalAgentTaskService;
 import com.anyujia.anyujialegalservice.service.LegalAgentTaskEventService;
 import com.anyujia.anyujialegalservice.service.LegalAgentEventSubscriptionService;
 import com.anyujia.anyujialegalservice.service.LegalAgentMetrics;
+import com.anyujia.anyujialegalservice.service.LegalAgentReviewService;
 import com.anyujia.anyujialegalservice.domain.entity.LegalAgentTaskEvent;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -56,13 +57,13 @@ import com.anyujia.anyujialegalapi.domain.dto.LegalAnswerReqDTO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentAnswerReqDTO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentTaskSubmitReqDTO;
 import com.anyujia.anyujialegalapi.domain.dto.LegalAgentBindReqDTO;
+import com.anyujia.anyujialegalapi.domain.dto.LegalAgentReviewReqDTO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentAnswerVO;
 import com.anyujia.anyujialegalapi.domain.vo.LegalAgentTaskVO;
 
 @RestController
 @RequestMapping("/legal")
-@RequiredArgsConstructor
 public class LegalController implements LegalFeignClient {
     private final LegalContractService contractService;
     private final LegalAssessmentService assessmentService;
@@ -75,6 +76,7 @@ public class LegalController implements LegalFeignClient {
     private final LegalAgentTaskService legalAgentTaskService;
     private final LegalAgentTaskEventService legalAgentTaskEventService;
     private final LegalAgentEventSubscriptionService legalAgentEventSubscriptionService;
+    private final LegalAgentReviewService legalAgentReviewService;
     @Qualifier("legalSseScheduler")
     @Autowired
     private ScheduledExecutorService sseScheduler;
@@ -89,6 +91,43 @@ public class LegalController implements LegalFeignClient {
     private Executor sseWriterExecutor;
     @Autowired
     private LegalAgentMetrics sseMetrics;
+
+    @Autowired
+    public LegalController(LegalContractService contractService, LegalAssessmentService assessmentService,
+                           LegalDocumentIngestionService ingestionService, LegalKnowledgeService knowledgeService,
+                           LegalKnowledgeSearchService knowledgeSearchService, LegalAnswerService legalAnswerService,
+                           LegalAgentService legalAgentService,
+                           LegalAgentConversationService legalAgentConversationService,
+                           LegalAgentTaskService legalAgentTaskService,
+                           LegalAgentTaskEventService legalAgentTaskEventService,
+                           LegalAgentEventSubscriptionService legalAgentEventSubscriptionService,
+                           LegalAgentReviewService legalAgentReviewService) {
+        this.contractService = contractService;
+        this.assessmentService = assessmentService;
+        this.ingestionService = ingestionService;
+        this.knowledgeService = knowledgeService;
+        this.knowledgeSearchService = knowledgeSearchService;
+        this.legalAnswerService = legalAnswerService;
+        this.legalAgentService = legalAgentService;
+        this.legalAgentConversationService = legalAgentConversationService;
+        this.legalAgentTaskService = legalAgentTaskService;
+        this.legalAgentTaskEventService = legalAgentTaskEventService;
+        this.legalAgentEventSubscriptionService = legalAgentEventSubscriptionService;
+        this.legalAgentReviewService = legalAgentReviewService;
+    }
+
+    public LegalController(LegalContractService contractService, LegalAssessmentService assessmentService,
+                           LegalDocumentIngestionService ingestionService, LegalKnowledgeService knowledgeService,
+                           LegalKnowledgeSearchService knowledgeSearchService, LegalAnswerService legalAnswerService,
+                           LegalAgentService legalAgentService,
+                           LegalAgentConversationService legalAgentConversationService,
+                           LegalAgentTaskService legalAgentTaskService,
+                           LegalAgentTaskEventService legalAgentTaskEventService,
+                           LegalAgentEventSubscriptionService legalAgentEventSubscriptionService) {
+        this(contractService, assessmentService, ingestionService, knowledgeService, knowledgeSearchService,
+                legalAnswerService, legalAgentService, legalAgentConversationService, legalAgentTaskService,
+                legalAgentTaskEventService, legalAgentEventSubscriptionService, null);
+    }
 
     @PostMapping("/contracts/upload")
     public ApiResult<ContractVO> uploadContract(@RequestHeader("userId") Long userId,
@@ -161,6 +200,36 @@ public class LegalController implements LegalFeignClient {
                                                     @PathVariable("taskId") Long taskId) {
         requireTenant(userType, userFrom);
         return ApiResult.success(legalAgentTaskService.get(userId, taskId));
+    }
+
+    @PostMapping("/agent/tasks/{taskId}/replay")
+    public ApiResult<Void> replayAgentTask(@RequestHeader("userId") Long userId,
+                                           @RequestHeader("userType") Integer userType,
+                                           @RequestHeader("userFrom") String userFrom,
+                                           @PathVariable("taskId") Long taskId) {
+        requireTenant(userType, userFrom);
+        legalAgentTaskService.replay(userId, taskId);
+        return ApiResult.success();
+    }
+
+    @PostMapping("/agent/tasks/{taskId}/review/approve")
+    public ApiResult<Void> approveAgentReview(@RequestHeader("userId") Long reviewerId,
+                                              @RequestHeader("userFrom") String userFrom,
+                                              @PathVariable("taskId") Long taskId,
+                                              @RequestBody @Valid LegalAgentReviewReqDTO request) {
+        requireInternal(userFrom);
+        legalAgentReviewService.approve(taskId, reviewerId, request.getComment());
+        return ApiResult.success();
+    }
+
+    @PostMapping("/agent/tasks/{taskId}/review/reject")
+    public ApiResult<Void> rejectAgentReview(@RequestHeader("userId") Long reviewerId,
+                                             @RequestHeader("userFrom") String userFrom,
+                                             @PathVariable("taskId") Long taskId,
+                                             @RequestBody @Valid LegalAgentReviewReqDTO request) {
+        requireInternal(userFrom);
+        legalAgentReviewService.reject(taskId, reviewerId, request.getComment());
+        return ApiResult.success();
     }
 
     @GetMapping(value = "/agent/tasks/{taskId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -355,7 +424,9 @@ public class LegalController implements LegalFeignClient {
                                                      @RequestHeader("userFrom") String userFrom,
                                                      @RequestBody @Valid LegalAgentAnswerReqDTO request) {
         requireTenant(userType, userFrom);
-        return ApiResult.success(legalAgentService.answer(userId, request));
+        LegalAgentAnswerVO answer = legalAgentService.answer(userId, request);
+        legalAgentService.publishAnswer(userId, request, answer);
+        return ApiResult.success(answer);
     }
 
     @PostMapping("/agent/bind")

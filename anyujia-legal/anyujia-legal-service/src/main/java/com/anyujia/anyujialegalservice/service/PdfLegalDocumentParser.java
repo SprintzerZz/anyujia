@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class PdfLegalDocumentParser implements LegalDocumentParser {
     private final LegalDocumentProperties limits;
+    private final TikaLegalDocumentExtractor tikaExtractor;
 
     @Override
     public boolean supports(String filename, byte[] content) {
@@ -35,15 +36,18 @@ public class PdfLegalDocumentParser implements LegalDocumentParser {
             if (pageCount < 1 || pageCount > limits.getMaxPages()) {
                 throw invalid("PDF 页数超过限制");
             }
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
+            TikaLegalDocumentExtractor.Extraction extraction = tikaExtractor.extract(content);
             List<ParsedBlock> blocks = new ArrayList<>();
             StringBuilder fullText = new StringBuilder();
             int paragraphIndex = 0;
+            String[] pages = extraction.text().split("\\f", -1);
+            if (pages.length < pageCount) {
+                // Tika is the canonical extraction path. Some PDF parser versions normalize
+                // page separators away, so use PDFBox only as a page-locator sidecar.
+                pages = pageTextsForLocators(document, pageCount);
+            }
             for (int page = 1; page <= pageCount; page++) {
-                stripper.setStartPage(page);
-                stripper.setEndPage(page);
-                String pageText = normalize(stripper.getText(document));
+                String pageText = normalize(page <= pages.length ? pages[page - 1] : "");
                 for (String part : pageText.split("\\n\\s*\\n|(?<=。)\\s*\\n")) {
                     String text = part.trim();
                     if (text.isEmpty()) {
@@ -64,6 +68,18 @@ public class PdfLegalDocumentParser implements LegalDocumentParser {
         } catch (IOException | RuntimeException ex) {
             throw invalid("PDF 解析失败: " + safeMessage(ex));
         }
+    }
+
+    private String[] pageTextsForLocators(PDDocument document, int pageCount) throws IOException {
+        PDFTextStripper stripper = new PDFTextStripper();
+        stripper.setSortByPosition(true);
+        String[] pages = new String[pageCount];
+        for (int page = 1; page <= pageCount; page++) {
+            stripper.setStartPage(page);
+            stripper.setEndPage(page);
+            pages[page - 1] = stripper.getText(document);
+        }
+        return pages;
     }
 
     private String normalize(String value) {

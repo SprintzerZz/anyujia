@@ -4,6 +4,7 @@ import com.anyujia.anyujialegalservice.config.LegalDocumentProperties;
 import com.anyujia.anyujialegalservice.domain.model.ParsedBlock;
 import com.anyujia.anyujialegalservice.domain.model.ParsedDocument;
 import com.anyujia.anyujialegalservice.service.PdfLegalDocumentParser;
+import com.anyujia.anyujialegalservice.service.TikaLegalDocumentExtractor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
@@ -19,7 +20,8 @@ public final class LegalDocumentInspectCli {
             throw new IllegalArgumentException("Usage: LegalDocumentInspectCli <pdf-path>");
         }
         Path path = Path.of(args[0]).toAbsolutePath().normalize();
-        ParsedDocument parsed = new PdfLegalDocumentParser(new LegalDocumentProperties())
+        ParsedDocument parsed = new PdfLegalDocumentParser(new LegalDocumentProperties(),
+                new TikaLegalDocumentExtractor())
                 .parse(Files.readAllBytes(path));
         System.out.printf("type=%s pages=%d blocks=%d characters=%d precision=%s%n",
                 parsed.documentType(), parsed.pageCount(), parsed.blocks().size(),

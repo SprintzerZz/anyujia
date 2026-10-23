@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class LegalKnowledgeRetriever {
-    private static final int MAX_CANDIDATES = 2000;
     private final LegalSourceMapper sourceMapper;
     private final LegalSourceChunkMapper chunkMapper;
     private final LegalEmbeddingClient embeddingClient;
@@ -53,7 +52,15 @@ public class LegalKnowledgeRetriever {
                 .eq(LegalSource::getStatus, 1));
         Map<Long, LegalSource> eligible = sources.stream()
                 .filter(source -> isEligible(source, region, date))
-                .collect(Collectors.toMap(LegalSource::getId, Function.identity()));
+                // When multiple effective versions overlap, prefer the newest version
+                // for the same title and region; keep different statutes independent.
+                .collect(Collectors.toMap(LegalSource::getId, Function.identity(),
+                        (left, right) -> newerVersion(left, right), LinkedHashMap::new));
+        Map<String, LegalSource> latestByTitle = new LinkedHashMap<>();
+        eligible.values().forEach(source -> latestByTitle.merge(versionKey(source), source,
+                this::newerVersion));
+        eligible = latestByTitle.values().stream().collect(Collectors.toMap(
+                LegalSource::getId, Function.identity(), (left, right) -> left, LinkedHashMap::new));
         if (eligible.isEmpty()) {
             return result;
         }
@@ -70,7 +77,8 @@ public class LegalKnowledgeRetriever {
                     LegalSourceChunk::getChunkIndex, LegalSourceChunk::getArticleNumber,
                     LegalSourceChunk::getChunkText);
         }
-        List<LegalSourceChunk> chunks = chunkMapper.selectList(chunkQuery.last("LIMIT " + MAX_CANDIDATES));
+        int maxCandidates = properties.getRetrieval().getMaxChunkCandidates();
+        List<LegalSourceChunk> chunks = chunkMapper.selectList(chunkQuery.last("LIMIT " + maxCandidates));
         Map<Long, double[]> chunkVectors = useVector
                 ? chunks.stream().collect(Collectors.toMap(LegalSourceChunk::getId,
                         chunk -> parseVector(chunk.getEmbeddingJson())))
@@ -134,6 +142,20 @@ public class LegalKnowledgeRetriever {
                 || region.equalsIgnoreCase(source.getRegionCode());
         return regionMatches && !source.getEffectiveFrom().isAfter(date)
                 && (source.getEffectiveTo() == null || !source.getEffectiveTo().isBefore(date));
+    }
+
+    private String versionKey(LegalSource source) {
+        return source.getRegionCode() + "|" + source.getTitle();
+    }
+
+    private LegalSource newerVersion(LegalSource left, LegalSource right) {
+        if (left.getEffectiveFrom() == null) {
+            return right;
+        }
+        if (right.getEffectiveFrom() == null) {
+            return left;
+        }
+        return right.getEffectiveFrom().isAfter(left.getEffectiveFrom()) ? right : left;
     }
 
     private double[] parseVector(String json) {

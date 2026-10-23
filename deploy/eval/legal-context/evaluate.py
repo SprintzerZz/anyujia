@@ -46,8 +46,26 @@ def validate(cases):
 
 
 def evaluate(cases, predictions):
-    has_predictions = bool(predictions)
+    has_predictions = predictions is not None
     prediction_map = {row.get("case_id"): row for row in predictions or []}
+    case_ids = {case["case_id"] for case in cases}
+    prediction_ids = [row.get("case_id") for row in predictions or []]
+    if has_predictions and (len(prediction_ids) != len(set(prediction_ids))
+                            or set(prediction_ids) != case_ids):
+        raise ValueError("predictions must contain every dataset case_id exactly once and no unknown ids")
+    if has_predictions:
+        required_fields = ("selected_evidence_ids", "facts", "context_status",
+                           "semantic_conflict", "history_reference")
+        for case in cases:
+            prediction = prediction_map[case["case_id"]]
+            missing = [field for field in required_fields if field not in prediction]
+            if missing:
+                raise ValueError(f"{case['case_id']}: prediction missing {missing}")
+            source_ids = {item.get("message_id") for item in case["chat_messages"]} | {
+                item.get("block_id") for item in case["contract_blocks"]
+            }
+            if not set(prediction["selected_evidence_ids"]) <= source_ids:
+                raise ValueError(f"{case['case_id']}: prediction cites unknown evidence")
     rows = []
     for case in cases:
         prediction = prediction_map.get(case["case_id"], {})
@@ -63,7 +81,11 @@ def evaluate(cases, predictions):
             "fact_recall": facts_hit / len(case.get("expected_facts", []))
             if case.get("expected_facts") else 1.0,
             "context_status_match": prediction.get("context_status")
-            in (None, case.get("expected_context_status")),
+            == case.get("expected_context_status"),
+            "semantic_conflict_match": prediction.get("semantic_conflict")
+            == case.get("requires_conflict_flag", False),
+            "history_reference_match": prediction.get("history_reference")
+            == case.get("requires_history_reference", False),
         }
         rows.append(row)
     if not has_predictions:
@@ -81,6 +103,8 @@ def evaluate(cases, predictions):
             "fact_recall": sum(row["fact_recall"] for row in rows) / denominator,
             "forbidden_violation_cases": sum(bool(row["forbidden_selected"]) for row in rows),
             "context_status_match_rate": sum(row["context_status_match"] for row in rows) / denominator,
+            "semantic_conflict_match_rate": sum(row["semantic_conflict_match"] for row in rows) / denominator,
+            "history_reference_match_rate": sum(row["history_reference_match"] for row in rows) / denominator,
         })
     else:
         report["evaluation_status"] = "DATASET_VALIDATED_ONLY"
@@ -97,7 +121,7 @@ def main():
     errors = validate(cases)
     if errors:
         raise SystemExit("Dataset validation failed:\n- " + "\n- ".join(errors))
-    predictions = load_jsonl(args.predictions) if args.predictions else []
+    predictions = load_jsonl(args.predictions) if args.predictions else None
     report = evaluate(cases, predictions)
     output = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:

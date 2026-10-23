@@ -73,6 +73,9 @@ public class LegalAiProperties {
         @Min(1)
         @Max(500)
         private int rerankCandidateLimit = 30;
+    @Min(100)
+    @Max(10000)
+    private int maxChunkCandidates = 2000;
         @Min(1)
         @Max(1000)
         private int rrfK = 60;

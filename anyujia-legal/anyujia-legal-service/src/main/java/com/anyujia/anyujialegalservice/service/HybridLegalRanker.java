@@ -320,12 +320,31 @@ public class HybridLegalRanker {
     private double lexicalScore(String text, Set<String> terms, Map<String, Long> documentFrequency,
                                 int documentCount) {
         String normalized = normalized(text);
+        int documentLength = Math.max(1, normalized.length());
+        double averageLength = Math.max(1D, documentCount == 0 ? documentLength : 800D);
+        double k1 = 1.2D;
+        double b = 0.75D;
         return terms.stream().filter(normalized::contains).mapToDouble(term -> {
-            double lengthWeight = term.length() > 2 ? 1.5D : 1D;
-            double inverseFrequency = Math.log((documentCount + 1D)
-                    / (documentFrequency.getOrDefault(term, 0L) + 1D)) + 1D;
-            return lengthWeight * inverseFrequency;
+            double termFrequency = countOccurrences(normalized, term);
+            double inverseFrequency = Math.log(1D + (documentCount - documentFrequency.getOrDefault(term, 0L) + 0.5D)
+                    / (documentFrequency.getOrDefault(term, 0L) + 0.5D)) + 1D;
+            double lengthNorm = 1D - b + b * documentLength / averageLength;
+            return inverseFrequency * (termFrequency * (k1 + 1D))
+                    / (termFrequency + k1 * lengthNorm);
         }).sum();
+    }
+
+    private int countOccurrences(String text, String term) {
+        if (term.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        int cursor = 0;
+        while ((cursor = text.indexOf(term, cursor)) >= 0) {
+            count++;
+            cursor += term.length();
+        }
+        return count;
     }
 
     private String normalized(String text) {

@@ -23,7 +23,7 @@ class PdfLegalDocumentParserTest {
             content = output.toByteArray();
         }
 
-        ParsedDocument parsed = new PdfLegalDocumentParser(limits()).parse(content);
+        ParsedDocument parsed = new PdfLegalDocumentParser(limits(), new TikaLegalDocumentExtractor()).parse(content);
 
         assertThat(parsed.documentType()).isEqualTo("PDF");
         assertThat(parsed.pageCount()).isEqualTo(2);

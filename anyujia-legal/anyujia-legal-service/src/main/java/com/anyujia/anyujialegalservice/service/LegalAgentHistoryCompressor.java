@@ -1,6 +1,7 @@
 package com.anyujia.anyujialegalservice.service;
 
 import com.anyujia.anyujialegalservice.domain.model.AgentHistory;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
@@ -24,18 +25,28 @@ public class LegalAgentHistoryCompressor {
         }
         int recentStart = Math.max(0, turns.size() - RECENT_TURNS);
         StringBuilder result = new StringBuilder("[agent_history]\n");
-        if (recentStart > 0) {
-            result.append("[history_summary source_turns=1-").append(recentStart).append("]\n");
-            for (int i = 0; i < recentStart && result.length() < maxChars; i++) {
+        // Reserve the budget for recent turns first; old previews must never evict them.
+        List<String> recent = new ArrayList<>();
+        int reserved = result.length();
+        for (int i = turns.size() - 1; i >= recentStart; i--) {
+            AgentHistory.Turn turn = turns.get(i);
+            String rendered = "[history_turn index=" + (i + 1) + " role="
+                    + safe(turn.getRole()) + "]\n" + safe(turn.getContent());
+            if (reserved + rendered.length() + 1 <= maxChars) {
+                recent.add(0, rendered);
+                reserved += rendered.length() + 1;
+            }
+        }
+        for (String rendered : recent) {
+            appendBounded(result, rendered, maxChars);
+        }
+        if (recentStart > 0 && result.length() < maxChars) {
+            appendBounded(result, "[history_summary source_turns=1-" + recentStart + "]", maxChars);
+            for (int i = recentStart - 1; i >= 0 && result.length() < maxChars; i--) {
                 AgentHistory.Turn turn = turns.get(i);
                 appendBounded(result, "turn=" + (i + 1) + " role=" + safe(turn.getRole())
                         + " preview=" + preview(turn.getContent()), maxChars);
             }
-        }
-        for (int i = recentStart; i < turns.size() && result.length() < maxChars; i++) {
-            AgentHistory.Turn turn = turns.get(i);
-            appendBounded(result, "[history_turn index=" + (i + 1) + " role="
-                    + safe(turn.getRole()) + "]\n" + safe(turn.getContent()), maxChars);
         }
         return result.toString();
     }

@@ -59,6 +59,8 @@ public class LegalAssessmentService {
         job.setAsOfDate(request.getAsOfDate() == null || request.getAsOfDate().isBlank()
                 ? LocalDate.now() : LocalDate.parse(request.getAsOfDate()));
         job.setStatus(LegalConstants.JOB_PENDING);
+        job.setAttemptCount(0);
+        job.setNextRunAt(now);
         job.setCreatedAt(now);
         job.setUpdatedAt(now);
         try {

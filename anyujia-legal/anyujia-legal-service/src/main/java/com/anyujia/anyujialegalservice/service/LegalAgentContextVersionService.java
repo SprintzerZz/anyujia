@@ -20,14 +20,13 @@ public class LegalAgentContextVersionService {
     private static final long TTL_SECONDS = 1800L;
 
     private final ObjectProvider<RedisService> redisServiceProvider;
-    private volatile boolean redisUnavailable;
 
     public ChangeStatus record(Long tenantId, Long conversationId, String grounding) {
         return recordVersion(tenantId, conversationId, grounding).status();
     }
 
     public ContextVersion recordVersion(Long tenantId, Long conversationId, String grounding) {
-        if (redisUnavailable || tenantId == null || conversationId == null) {
+        if (tenantId == null || conversationId == null) {
             return new ContextVersion(sha256(grounding), ChangeStatus.UNKNOWN);
         }
         RedisService redis = redisService();
@@ -45,8 +44,7 @@ public class LegalAgentContextVersionService {
             ChangeStatus status = previous.equals(current) ? ChangeStatus.UNCHANGED : ChangeStatus.CHANGED;
             return new ContextVersion(current, status);
         } catch (Exception ex) {
-            redisUnavailable = true;
-            log.warn("Legal agent context version disabled after Redis failure: {}", ex.getMessage());
+            log.warn("Legal agent context version unavailable for this request: {}", ex.getMessage());
             return new ContextVersion(current, ChangeStatus.UNKNOWN);
         }
     }
@@ -65,7 +63,7 @@ public class LegalAgentContextVersionService {
         try {
             return redisServiceProvider.getIfAvailable();
         } catch (Exception ex) {
-            redisUnavailable = true;
+            log.warn("Legal agent context version Redis provider unavailable: {}", ex.getMessage());
             return null;
         }
     }

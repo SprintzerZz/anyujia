@@ -26,6 +26,10 @@ public class LegalAgentTask {
     private String contextHash;
     private String contextStatus;
     private Boolean contextConflict;
+    private Boolean reviewRequired;
+    private String evidenceManifestJson;
+    private Integer chatDeliveryState;
+    private LocalDateTime chatDeliveryClaimedAt;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

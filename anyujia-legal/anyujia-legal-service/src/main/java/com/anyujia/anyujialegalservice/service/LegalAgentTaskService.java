@@ -38,7 +38,11 @@ public class LegalAgentTaskService {
     private final ObjectMapper objectMapper;
     private final LegalAgentTaskOutboxMapper outboxMapper;
     private final LegalAgentTaskEventService eventService;
+    private final LegalAgentAnswerDeliveryService answerDeliveryService;
     private final LegalAgentMetrics metrics;
+    private final LegalAgentCheckpointService checkpointService;
+    private final com.anyujia.anyujialegalservice.config.LegalTelemetry telemetry;
+    private final LegalAgentReviewService reviewService;
 
     @Transactional(rollbackFor = Exception.class)
     public LegalAgentTaskVO submit(Long tenantId, LegalAgentTaskSubmitReqDTO request) {
@@ -107,21 +111,44 @@ public class LegalAgentTaskService {
             request.setQuery(task.getQueryText());
             request.setRegionCode(task.getRegionCode());
             request.setAsOfDate(task.getAsOfDate().toString());
-            LegalAgentAnswerVO answer = agentService.answer(task.getTenantId(), request);
+            checkpointService.start(taskId, "CONTEXT_AND_EVIDENCE", task.getRequestId());
+            LegalAgentAnswerVO answer = telemetry.stage("context-and-answer", taskId,
+                    () -> agentService.answer(task.getTenantId(), request));
+            checkpointService.success(taskId, "CONTEXT_AND_EVIDENCE", objectMapper.writeValueAsString(
+                    java.util.Map.of("contextStatus", answer.getContextStatus(),
+                            "contextConflict", answer.isContextConflict())));
             String answerJson = objectMapper.writeValueAsString(answer);
             task.setContextHash(answer.getContextHash());
             task.setContextStatus(answer.getContextStatus());
             task.setContextConflict(answer.isContextConflict());
+            task.setReviewRequired(answer.isReviewRequired());
+            if (answer.isReviewRequired()) {
+                if (taskMapper.holdForReview(taskId, workerId, answerJson,
+                        answer.getContextHash(), answer.getContextStatus(), answer.isContextConflict(),
+                        objectMapper.writeValueAsString(answer.getEvidenceManifest())) > 0) {
+                    java.math.BigDecimal score = answer.getConclusionSupports() == null
+                            || answer.getConclusionSupports().isEmpty() ? java.math.BigDecimal.ZERO
+                            : answer.getConclusionSupports().stream()
+                            .map(com.anyujia.anyujialegalapi.domain.vo.LegalConclusionSupportVO::getSupportScore)
+                            .min(java.util.Comparator.naturalOrder()).orElse(java.math.BigDecimal.ZERO);
+                    reviewService.create(taskId, task.getTenantId(),
+                            "存在未充分证据支持的法律结论，需人工确认后再推送", score, answerJson);
+                }
+                return;
+            }
             if (taskMapper.complete(taskId, workerId, answerJson,
-                    answer.getContextHash(), answer.getContextStatus(), answer.isContextConflict()) > 0) {
+                    answer.getContextHash(), answer.getContextStatus(), answer.isContextConflict(),
+                    objectMapper.writeValueAsString(answer.getEvidenceManifest())) > 0) {
                 try {
                     eventService.append(taskId, task.getTenantId(), "result", answerJson);
                 } catch (Exception eventError) {
                     // 任务状态已经完成，事件发布失败不能反向把任务改成 FAILED；后续可由事件补偿任务处理。
                     log.error("Legal Agent result event append failed, taskId={}", taskId, eventError);
                 }
+                answerDeliveryService.schedule(taskId);
             }
         } catch (Exception ex) {
+            checkpointService.failure(taskId, "CONTEXT_AND_EVIDENCE", ex);
             log.error("Legal Agent task failed, taskId={}", taskId, ex);
             String error = boundedError(ex);
             if (taskMapper.fail(taskId, workerId, error) > 0) {
@@ -133,6 +160,28 @@ public class LegalAgentTaskService {
                 }
             }
         }
+    }
+
+    @Transactional
+    public void replay(Long tenantId, Long taskId) {
+        LegalAgentTask task = taskMapper.selectOne(new LambdaQueryWrapper<LegalAgentTask>()
+                .eq(LegalAgentTask::getId, taskId).eq(LegalAgentTask::getTenantId, tenantId));
+        if (task == null) {
+            throw new ServiceException("法律助手任务不存在或无权访问", ResultCode.TOKEN_CHECK_FAILED.getCode());
+        }
+        if (taskMapper.replay(taskId) == 0) {
+            throw new ServiceException("仅失败任务允许重放", ResultCode.ERROR.getCode());
+        }
+        LegalAgentTaskOutbox outbox = new LegalAgentTaskOutbox();
+        outbox.setTaskId(taskId);
+        outbox.setEventType("AGENT_ANSWER");
+        outbox.setPayload(String.valueOf(taskId));
+        outbox.setStatus(0);
+        outbox.setRetryCount(0);
+        outbox.setNextRetryAt(LocalDateTime.now());
+        outbox.setCreatedAt(LocalDateTime.now());
+        outbox.setUpdatedAt(LocalDateTime.now());
+        outboxMapper.insert(outbox);
     }
 
     @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${legal.agent.recovery-delay-millis:30000}")
@@ -159,6 +208,7 @@ public class LegalAgentTaskService {
         result.setErrorMessage(task.getErrorMessage());
         result.setCreatedAt(toEpochMilli(task.getCreatedAt()));
         result.setCompletedAt(toEpochMilli(task.getCompletedAt()));
+        result.setReviewRequired(Boolean.TRUE.equals(task.getReviewRequired()));
         if (COMPLETED.equals(task.getStatus()) && task.getAnswerJson() != null) {
             try {
                 LegalAgentAnswerVO answer = objectMapper.readValue(task.getAnswerJson(), LegalAgentAnswerVO.class);
@@ -169,6 +219,7 @@ public class LegalAgentTaskService {
                 result.setContextHash(answer.getContextHash());
                 result.setContextStatus(answer.getContextStatus());
                 result.setContextConflict(answer.isContextConflict());
+                result.setReviewRequired(answer.isReviewRequired());
             } catch (JsonProcessingException ex) {
                 result.setStatus(FAILED);
                 result.setErrorMessage("任务结果解析失败");

@@ -35,4 +35,17 @@ class LegalAgentHistoryCompressorTest {
 
         assertThat(context.length()).isLessThanOrEqualTo(100);
     }
+
+    @Test
+    void recentTurnsTakePriorityWhenOlderPreviewsWouldFillBudget() {
+        List<AgentHistory.Turn> turns = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            AgentHistory.Turn turn = new AgentHistory.Turn();
+            turn.setRole("user");
+            turn.setContent(i == 29 ? "最新风险问题" : "旧内容".repeat(40));
+            turns.add(turn);
+        }
+        String context = new LegalAgentHistoryCompressor().build(turns, 1000);
+        assertThat(context).contains("最新风险问题", "history_turn index=30");
+    }
 }

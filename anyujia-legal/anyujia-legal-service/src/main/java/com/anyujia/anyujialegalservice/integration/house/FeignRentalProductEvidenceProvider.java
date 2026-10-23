@@ -19,30 +19,33 @@ import org.springframework.stereotype.Component;
 public class FeignRentalProductEvidenceProvider implements RentalProductEvidenceProvider {
     private final ChatFeignClient chatFeignClient;
     private final HousePublishFeignClient housePublishFeignClient;
+    private final com.anyujia.anyujialegalservice.service.LegalResilientCallExecutor resilientCallExecutor;
 
     @Override
     public Optional<HousePublishVO> snapshot(Long tenantId, Long conversationId) {
         try {
             ConversationContextReqDTO request = new ConversationContextReqDTO();
             request.setSessionId(conversationId);
-            ApiResult<ConversationContextVO> contextResponse = chatFeignClient.context("service", request);
+            ApiResult<ConversationContextVO> contextResponse = resilientCallExecutor.execute("chat-context",
+                    () -> chatFeignClient.context("service", request), () -> null);
             if (contextResponse == null || contextResponse.getCode() != ResultCode.SUCCESS.getCode()
                     || contextResponse.getData() == null) {
-                return Optional.empty();
+                throw new IllegalStateException("Chat conversation context unavailable");
             }
             ConversationContextVO context = contextResponse.getData();
             if (!tenantId.equals(context.getTenantUserId()) || context.getHousePublishId() == null) {
                 return Optional.empty();
             }
-            ApiResult<HousePublishVO> houseResponse = housePublishFeignClient.getSnapshot(context.getHousePublishId());
+            ApiResult<HousePublishVO> houseResponse = resilientCallExecutor.execute("house-snapshot",
+                    () -> housePublishFeignClient.getSnapshot(context.getHousePublishId()), () -> null);
             if (houseResponse == null || houseResponse.getCode() != ResultCode.SUCCESS.getCode()
                     || houseResponse.getData() == null) {
-                return Optional.empty();
+                throw new IllegalStateException("Rental product snapshot unavailable");
             }
             return Optional.of(houseResponse.getData());
         } catch (Exception ex) {
             log.warn("Rental product evidence unavailable for conversation {}: {}", conversationId, ex.getMessage());
-            return Optional.empty();
+            throw new IllegalStateException("Rental product evidence unavailable for consistency check", ex);
         }
     }
 }
