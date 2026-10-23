@@ -1,104 +1,76 @@
-# Anyujia
+# AnyuJia
 
-Anyujia 是一个基于 Spring Cloud Alibaba 的租房平台后端项目，采用 Maven 多模块结构，覆盖用户与后台管理、房源发布、即时聊天、平台优惠券、文件存储和租房法律风险评估等业务能力。
+AnyuJia 是一个基于 Spring Cloud Alibaba 的租房平台后端项目，覆盖房源、租客与房东即时聊天、优惠券、文件存储和租房法律风险评估等业务场景。
 
-项目已完成源码脱敏处理，运行密码、Token、AK/SK 等敏感配置均应通过环境变量或私有配置中心注入，不应提交到 Git。
+项目重点围绕高并发业务和 AI Agent 工程化落地进行建设：聊天链路强调可靠投递与可恢复，优惠券链路强调库存与幂等，法律 Agent 链路强调多源证据、上下文一致性和可追溯结论。
+
+> 仓库已完成源码脱敏。密码、Token、AK/SK、模型缓存和本地运行数据均不提交到 Git，应通过环境变量、容器密钥或私有配置中心注入。
 
 ## 技术栈
 
-- Java 17, Spring Boot, Spring Cloud Alibaba, Nacos
-- MyBatis-Plus, MySQL, ShardingSphere
-- Redis, Redisson, Caffeine
-- RocketMQ, RabbitMQ
-- Netty WebSocket, Spring WebSocket
-- Docker Compose, Maven
-- EasyExcel, XXL-Job 相关批量任务与补偿任务设计
+- Java 17、Spring Boot、Spring Cloud Alibaba、Nacos
+- MyBatis-Plus、MySQL、ShardingSphere、Seata
+- Redis、Redisson、Caffeine
+- RabbitMQ、RocketMQ、Netty WebSocket、Spring WebSocket
+- Docker Compose、Maven、Node.js
+- Apache Tika、BM25/向量检索、RRF 融合、SSE
 
 ## 模块结构
 
 | 模块 | 说明 |
 | --- | --- |
-| `anyujia-gateway` | API 网关、鉴权过滤、WebSocket 票据校验和请求转发 |
-| `anyujia-common` | 公共返回体、异常处理、Redis、缓存、线程池、安全工具等公共能力 |
-| `anyujia-admin` | 后台管理、用户管理、字典参数、行政区划与地图服务 |
+| `anyujia-gateway` | API 网关、鉴权过滤、请求转发和 WebSocket 票据校验 |
+| `anyujia-admin` | 后台管理、用户、字典、行政区划和地图相关能力 |
 | `anyujia-house` | 房源发布、审核、公开查询和租赁商品信息 |
-| `anyujia-chat` | 租客与房东即时聊天、消息持久化、离线同步、Netty WebSocket |
-| `anyujia-coupon` | 平台优惠券、区域补贴券、高并发申领、批量发券、用户券结算与状态流转 |
-| `anyujia-file` | 文件上传、私有对象存储、上传签名和文件访问 |
-| `anyujia-legal` | 租房合同风险识别、法律知识检索、证据追踪和评估报告 |
-| `anyujia-mstemplate` | 微服务模板与基础连通性示例 |
-| `deploy` | Docker Compose、MySQL 脚本、RocketMQ、性能压测和评估脚本 |
+| `anyujia-chat` | 租客与房东聊天、消息持久化、离线同步和 WebSocket 推送 |
+| `anyujia-coupon` | 优惠券、区域补贴、高并发申领、批量发券和用户券状态流转 |
+| `anyujia-file` | 文件上传、私有对象存储、签名访问 |
+| `anyujia-legal` | 合同解析、法律 RAG、风险识别、证据评估和独立 Agent 会话 |
+| `deploy` | Docker 编排、数据库脚本、评估集、压测脚本和分析报告 |
 
-## 系统架构
+## 法律 Agent
 
-```mermaid
-flowchart TB
-    Client[Web / App Client] --> Gateway[anyujia-gateway]
+用户在租客与房东聊天页面点击法律助手后，会创建一个独立分析会话。Agent 通过 `landlordConversationId + contractId` 校验上下文绑定，分析结果写入独立会话，不污染原始聊天记录。
 
-    Gateway --> Admin[anyujia-admin]
-    Gateway --> House[anyujia-house]
-    Gateway --> Chat[anyujia-chat]
-    Gateway --> Coupon[anyujia-coupon]
-    Gateway --> File[anyujia-file]
-    Gateway --> Legal[anyujia-legal]
+核心流程如下：
 
-    Admin --> MySQL[(MySQL)]
-    House --> MySQL
-    Chat --> MySQL
-    Coupon --> Sharding[(ShardingSphere + MySQL)]
-    File --> MySQL
-    Legal --> MySQL
-
-    Admin --> Redis[(Redis)]
-    House --> Redis
-    Chat --> Redis
-    Coupon --> Redis
-    Legal --> Redis
-
-    Admin --> Nacos[Nacos Config / Discovery]
-    House --> Nacos
-    Chat --> Nacos
-    Coupon --> Nacos
-    File --> Nacos
-    Legal --> Nacos
-    Gateway --> Nacos
-
-    Chat --> RabbitMQ[RabbitMQ]
-    Coupon --> RocketMQ[RocketMQ]
-    Legal --> File
-    Legal --> Chat
-    Legal --> House
-
-    Coupon --> XXL[XXL-Job Compensation]
-    Admin --> Caffeine[Caffeine Local Cache]
-    Coupon --> Caffeine
+```text
+合同 PDF/DOCX ── Apache Tika ──┐
+租客/房东聊天 ────────────────┼─> 上下文快照 ─> 阶段化 Agent ─> 风险结论 + 证据引用
+房源与商品信息 ──────────────┤          │
+法律知识库 ── BM25/向量检索 ──┘          └─> SSE 增量推送 / 断线重放
 ```
 
-## 核心链路
+主要能力：
 
-### 区域补贴与优惠券
+- 合同、聊天、房源和法规分开建模，使用 Apache Tika 统一解析 PDF/DOCX。
+- BM25、法律意图和向量召回经 RRF 融合重排，法规支持版本和失效过滤。
+- 通过上下文指纹、风险条款摘要和关键聊天承诺实现上下文压缩；上下文变化时阻断过期答案。
+- Agent 按解析、检索、分析、证据评估、结论生成阶段执行，持久化 checkpoint，支持失败阶段重放和任务 replay。
+- 结论关联逐条证据，并进行语义级法律 entailment 评估；证据冲突时阻断高置信结论并进入人工审核队列。
+- 异步任务使用 MySQL 状态与租约、Outbox、RabbitMQ 和 Redis Stream；支持重启恢复、租约接管、幂等投递和 SSE `Last-Event-ID` 重放。
+- 本地 entailment 服务支持健康检查、动态批处理、超时、重试、熔断和多副本 HAProxy 转发；外部模型不可用时保留规则分析和引用兜底。
 
-- 区域补贴查询使用 Caffeine + Redis 两级缓存，启动时预热行政区划和补贴配置热点数据。
-- 热点 Key 失效时通过 Redisson 分布式锁和 Double Check 控制回源，降低缓存击穿风险。
-- 高并发申领使用 Redis Lua 原子校验活动状态、用户资格、区域范围、领取次数和库存，并完成库存预扣。
-- 申领成功后通过 RocketMQ 异步创建用户券，配合数据库条件更新、唯一索引和消费幂等，降低超发、重复领取和重复写入风险。
-- 批量发券使用 EasyExcel 流式解析名单，Redis 暂存待发用户，分批投递 RocketMQ，由消费者批量落库。
-- 用户券查询保留 Redis ZSet 用户券索引，用户券详情和模板详情走 Redis 缓存，available 查询使用 Pipeline 批量读取，数据库只作为 cache miss 兜底。
-- 用户券按用户维度通过 ShardingSphere 分库分表，锁券、核销、退款和过期使用数据库条件更新控制并发修改。
-- 过期处理使用 RocketMQ 延迟消息；失败任务通过任务状态、幂等记录和 XXL-Job 补偿扫描提高可靠性。
+相关设计、测试和压测记录：
 
-### 即时聊天
+- [`deploy/data/legal-module-analysis.md`](deploy/data/legal-module-analysis.md)
+- [`deploy/data/legal-resume.md`](deploy/data/legal-resume.md)
+- [`deploy/eval/legal-rag/README.md`](deploy/eval/legal-rag/README.md)
+- [`deploy/eval/legal-entailment/README.md`](deploy/eval/legal-entailment/README.md)
 
-- 聊天服务支持 Spring WebSocket 和可选 Netty WebSocket。
-- Netty 连接使用独立 EventLoop、写缓冲水位线、单连接队列上限和空闲连接回收，避免慢连接拖垮业务线程。
-- 消息落库后通过 RabbitMQ 推送，客户端断线后可通过消息同步接口补齐未读消息。
+## 可靠性与性能验证
 
-### 租房法律风险评估
+项目包含聊天、优惠券和法律 Agent 的评估与压测脚本，重点覆盖幂等、重试、断线恢复、租约接管、证据一致性和模型服务故障转移。
 
-- 法务模块面向租客侧合同风险识别，支持 PDF/DOCX 文档解析、合同证据块持久化和风险报告生成。
-- 评估上下文由合同条款、最近聊天记录、房源发布信息和法律知识片段组成，并写入上下文快照与追踪事件。
-- 法律知识检索包含词法召回、法律意图召回、可选向量召回、RRF 融合和确定性重排。
-- AI 增强默认关闭，缺少模型凭证或模型调用失败时仍保留确定性规则分析和引用兜底。
+已记录的法律 entailment 服务验证结果包括：
+
+| 场景 | 结果 |
+| --- | --- |
+| INT8 动态批处理，32 VU / 320 请求 | 320/320 成功，约 19.69 req/s，P95 2.74s |
+| 双副本 + HAProxy，64 VU / 640 请求 | 629 成功，约 32.18 req/s，P95 2.67s |
+| HAProxy 单副本故障转移，32 VU / 320 请求 | 320/320 成功，P95 1.62s，P99 1.83s |
+
+RAG 离线评估已记录 Recall@4、HitRate@4、citation validity、coverage 和语义 entailment 指标。具体口径和样本集见 `deploy/eval` 与法律模块分析报告。
 
 ## 本地构建
 
@@ -106,24 +78,33 @@ flowchart TB
 mvn clean package -DskipTests
 ```
 
-运行单个模块测试示例：
+运行单个模块测试：
 
 ```bash
 mvn -pl anyujia-coupon/anyujia-coupon-service test
+mvn -pl anyujia-legal/anyujia-legal-service test
 ```
 
-## 开发部署
+## Docker 开发环境
 
-中间件和服务编排位于 `deploy/dev/app`：
+中间件编排位于 `deploy/dev/app`：
 
 ```bash
 cd deploy/dev/app
 docker compose -p frameworkjava -f docker-compose-mid.yml up -d
 ```
 
-首次部署前请复制 `.env.example` 为 `.env`，并替换其中所有 `change-me` 值。生产环境建议使用 Nacos、容器密钥或 CI/CD Secret 注入，不要把真实密码写入仓库。
+如需覆盖默认配置，请通过 Docker Compose 环境变量、Nacos 私有配置或本机未跟踪的 `.env` 文件注入，不要提交真实凭证。
 
-常用服务端口：
+法律 Agent 的本地 entailment 服务为可选组件：
+
+```bash
+docker compose -p frameworkjava -f docker-compose-entailment.yml up -d
+```
+
+模型服务首次启动可能需要下载模型。若网络或代理不可用，法律 Agent 仍可运行确定性规则分析和 RAG 引用链路，但不会提供语义 entailment 评分。
+
+常用端口：
 
 | 服务 | 端口 |
 | --- | ---: |
@@ -132,26 +113,20 @@ docker compose -p frameworkjava -f docker-compose-mid.yml up -d
 | Chat HTTP | `18083` |
 | Chat Netty WebSocket | `18084` |
 | Coupon | `18085` |
+| Legal | `18086` |
 | Nacos | `8848` |
 | MySQL | `3306` |
 | Redis | `6379` |
-| RocketMQ NameServer | `9876` |
 
 ## 配置安全
 
-仓库已忽略以下本地产物：
-
-- `.env`, `.agent/`, `.idea/`
-- `target/`, `node_modules/`, `dist/`
-- `*.jar`, `*.war`, `*.log`, JVM dump/heap/profile 文件
-
-提交前建议执行：
+不要将真实凭证写入源码、测试数据、Docker Compose 或 README。提交前可检查暂存区：
 
 ```bash
-git grep -n -I -E "password|secret|token|accessKey|api-key"
+git grep -n -I -E "password|secret|token|accessKey|api-key" -- ':!deploy/dev/data/**'
 ```
 
-确认没有真实凭证进入暂存区。
+本地数据库、模型缓存、压测结果、临时合同和临时 Agent 会话数据已通过 `.gitignore` 排除。
 
 ## 目录说明
 
