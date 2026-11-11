@@ -14,6 +14,7 @@ public class MessageVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long fromId;
     private String content;
+    private ChatImageVO image;
     private Integer type;
     private Integer status;
     private Integer visited;

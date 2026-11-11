@@ -1,5 +1,38 @@
 # Chat load test
 
+## Hot listing: 100 tenants to one landlord
+
+`chat-hot-listing-e2e.js` sends one text and one image from each of 100 distinct
+tenants in separate one-to-one conversations for the same listing. It opens one
+landlord WebSocket, acknowledges delivered messages, and checks push latency,
+upload success, unread increments, latest-message IDs, and inbox ordering.
+Push latency uses the first matching WebSocket frame; later retry frames are
+counted separately. The delivery ACK includes the required protocol version
+and request ID.
+The first wave sends 100 texts concurrently; the image wave defaults to eight
+concurrent uploads so the bounded image service can apply backpressure.
+
+Run only against an isolated development environment. The script uses direct
+chat-service identity headers and does not exercise Gateway authentication.
+Prepare the idempotent fixture after the chat identity and house seeds have run:
+
+```powershell
+Get-Content -Raw deploy/perf/chat-hot-listing-fixtures.sql |
+  docker exec -i -e "MYSQL_PWD=$env:MYSQL_PASSWORD" frameworkjava-mysql `
+    mysql -uroot frameworkjava_dev
+node deploy/perf/chat-hot-listing-e2e.js
+```
+
+Defaults: `CHAT_BASE_URL=http://127.0.0.1:18083`,
+`CHAT_WS_URL=ws://127.0.0.1:18085`, `CHAT_LANDLORD_ID=2`,
+`CHAT_LISTING_ID=900000000000000001`, `CHAT_TENANTS=100`,
+`CHAT_TENANT_CONCURRENCY=100`, `CHAT_IMAGE_CONCURRENCY=8`.
+Set `CHAT_IMAGE_CONCURRENCY=100` for a deliberate burst-overload run.
+Each invocation writes unique messages and images; reruns increase unread counts.
+The result file is written under `deploy/perf/results/` unless
+`CHAT_RESULT_FILE` is set. Use a separate load-generator host before making a
+deployment capacity claim.
+
 Run load generation from a different machine than the application server.
 
 Required environment variables:

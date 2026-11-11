@@ -167,6 +167,7 @@ services:
           --replicaof frameworkjava-redis-master 6379 \
           --requirepass "$${REDIS_PASSWORD}" \
           --masterauth "$${REDIS_PASSWORD}" \
+          --repl-diskless-load swapdb \
           --appendonly yes \
           --dir /data
     environment:
@@ -201,6 +202,7 @@ services:
           --replicaof frameworkjava-redis-master 6379 \
           --requirepass "$${REDIS_PASSWORD}" \
           --masterauth "$${REDIS_PASSWORD}" \
+          --repl-diskless-load swapdb \
           --appendonly yes \
           --dir /data
     environment:
@@ -230,6 +232,7 @@ services:
         port 26379
         bind 0.0.0.0
         protected-mode no
+        sentinel resolve-hostnames yes
         sentinel monitor mymaster frameworkjava-redis-master 6379 2
         sentinel auth-pass mymaster $${REDIS_PASSWORD}
         sentinel down-after-milliseconds mymaster 5000
@@ -268,6 +271,7 @@ services:
         port 26379
         bind 0.0.0.0
         protected-mode no
+        sentinel resolve-hostnames yes
         sentinel monitor mymaster frameworkjava-redis-master 6379 2
         sentinel auth-pass mymaster $${REDIS_PASSWORD}
         sentinel down-after-milliseconds mymaster 5000
@@ -306,6 +310,7 @@ services:
         port 26379
         bind 0.0.0.0
         protected-mode no
+        sentinel resolve-hostnames yes
         sentinel monitor mymaster frameworkjava-redis-master 6379 2
         sentinel auth-pass mymaster $${REDIS_PASSWORD}
         sentinel down-after-milliseconds mymaster 5000
@@ -440,6 +445,9 @@ services:
       SPRING_DATA_REDIS_SENTINEL_NODES: frameworkjava-redis-sentinel-1:26379,frameworkjava-redis-sentinel-2:26379,frameworkjava-redis-sentinel-3:26379
       SPRING_RABBITMQ_HOST: frameworkjava-rabbitmq
       SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: admin
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-change-me}
+      FILE_SERVICE_URL: http://frameworkjava-file:18086
       CHAT_NETTY_ENABLED: "true"
       CHAT_NETTY_BIND_HOST: 0.0.0.0
       SEATA_TC_ADDR: frameworkjava-seata:8091
@@ -468,6 +476,51 @@ services:
       frameworkjava-redis-sentinel-3:
         condition: service_healthy
       frameworkjava-rabbitmq:
+        condition: service_healthy
+
+  frameworkjava-chat-minio:
+    container_name: frameworkjava-chat-minio
+    # SILO maintains MinIO's S3 API, MINIO_* settings, and on-disk format.
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+    environment:
+      MINIO_ROOT_USER: ${CHAT_MINIO_ROOT_USER:-chatdev}
+      MINIO_ROOT_PASSWORD: ${CHAT_MINIO_ROOT_PASSWORD:-change-me-chat-minio}
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9002:9000"
+      - "127.0.0.1:9003:9001"
+    volumes:
+      - ../data/frameworkjavadata/chat/minio:/data
+    restart: unless-stopped
+    networks:
+      - frameworkjava_network
+
+  frameworkjava-file:
+    container_name: frameworkjava-file
+    build: ./file
+    image: frameworkjava-file:dev
+    environment:
+      RUN_ENV: dev
+      FILE_SERVER_PORT: 18086
+      STORAGE_TYPE: minio
+      MINIO_ENDPOINT: http://frameworkjava-chat-minio:9000
+      MINIO_PUBLIC_URL: http://127.0.0.1:9002
+      MINIO_ACCESS_KEY: ${CHAT_MINIO_ROOT_USER:-chatdev}
+      MINIO_SECRET_KEY: ${CHAT_MINIO_ROOT_PASSWORD:-change-me-chat-minio}
+      MINIO_BUCKET: chat-images
+      MINIO_PUBLIC_READ: "true"
+      NACOS_ADDR: frameworkjava-nacos:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD:-change-me}
+    ports:
+      - "18087:18086"
+    restart: unless-stopped
+    networks:
+      - frameworkjava_network
+    depends_on:
+      frameworkjava-chat-minio:
+        condition: service_started
+      frameworkjava-nacos:
         condition: service_healthy
 
   frameworkjava-legal:
@@ -627,12 +680,12 @@ services:
         sh mqbroker -c /tmp/broker.conf
     environment:
       NAMESRV_ADDR: frameworkjava-rocketmq-namesrv:9876
-      ROCKETMQ_BROKER_IP: ${ROCKETMQ_BROKER_IP:-10.1.0.16}
+      ROCKETMQ_BROKER_IP: ${ROCKETMQ_BROKER_IP:?set ROCKETMQ_BROKER_IP}
       JAVA_OPT_EXT: -Xms512m -Xmx768m -Xmn256m -XX:MaxDirectMemorySize=256m
     ports:
-      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10909:10909"
-      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10911:10911"
-      - "${ROCKETMQ_BROKER_IP:-10.1.0.16}:10912:10912"
+      - "${ROCKETMQ_BROKER_IP:?set ROCKETMQ_BROKER_IP}:10909:10909"
+      - "${ROCKETMQ_BROKER_IP:?set ROCKETMQ_BROKER_IP}:10911:10911"
+      - "${ROCKETMQ_BROKER_IP:?set ROCKETMQ_BROKER_IP}:10912:10912"
     volumes:
       - ./rocketmq/conf/broker.conf.template:/opt/rocketmq/broker.conf.template:ro
       - frameworkjava_rocketmq_broker_logs:/home/rocketmq/logs

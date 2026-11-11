@@ -46,6 +46,7 @@ AnyuJia 是一个基于 Spring Cloud Alibaba 的租房平台后端项目，覆�
 - 合同、聊天、房源和法规分开建模，使用 Apache Tika 统一解析 PDF/DOCX。
 - BM25、法律意图和向量召回经 RRF 融合重排，法规支持版本和失效过滤。
 - 通过上下文指纹、风险条款摘要和关键聊天承诺实现上下文压缩；上下文变化时阻断过期答案。
+- 法律聊天上下文压缩只使用文本消息，图片等非文本内容不参与相关度排序，避免干扰证据上下文。
 - Agent 按解析、检索、分析、证据评估、结论生成阶段执行，持久化 checkpoint，支持失败阶段重放和任务 replay。
 - 结论关联逐条证据，并进行语义级法律 entailment 评估；证据冲突时阻断高置信结论并进入人工审核队列。
 - 异步任务使用 MySQL 状态与租约、Outbox、RabbitMQ 和 Redis Stream；支持重启恢复、租约接管、幂等投递和 SSE `Last-Event-ID` 重放。
@@ -70,6 +71,9 @@ Chat 模块面向租客与房东的实时沟通，采用 Spring WebSocket 与 Ne
 - 使用 1024 虚拟桶路由到 32 个逻辑 MySQL 分片，支持灰度迁移、历史回填、数据校验和分片回退。
 - 通过 Outbox、Claim Token、退避重试、DLQ 和重叠窗口对账，补偿消息已落库但异步事件缺失的场景。
 - 通过持久化 ACK、超时重推和 `/chat/message/sync` 断线补偿，形成“发送—落库—同步”的可恢复闭环。
+- 图片消息使用 `uploadId` 协调上传与发送，支持幂等重试；通过单节点有界排队和全局限流控制图片解码与存储压力，超限返回 HTTP 429。
+- 修复热点房源下会话索引缓存与异步校准的竞争；Outbox 调整批量、工作线程和轮询间隔，过期清理先走专用索引再按主键删除。
+- 聊天消息、会话、分片消息和 Outbox 统一使用 `ChatIdWorker`，对时钟回拨导致的 ID 生成失败进行有限重试。
 - 法律助手从聊天页面创建独立会话，绑定租客、房东原会话和合同，法律回答不会污染原始聊天记录。
 
 已记录的 Docker 开发环境验证结果：
@@ -78,10 +82,12 @@ Chat 模块面向租客与房东的实时沟通，采用 Spring WebSocket 与 Ne
 | --- | --- |
 | Netty 650 VU 连接测试 | 握手/心跳成功率 100%，建连 P95 17.38ms，P99 65.69ms |
 | 热点会话 40 req/s | P99 从 603.81ms 降至 59.8ms，下降约 90% |
+| 热点房源 100 租客文本与图片 | 200/200 推送成功，首帧 P95 从 5.13s 降至 2.57s，重复帧为 0 |
+| 图片消息链路 | 4/8 并发同步读取成功率从 50%/30% 提升至 100%/100%；单并发稳定推送 P95 从 1068ms 降至 403.3ms |
 | 10K 级消息一致性测试 | 10752 条消息发送、落库、同步回补数量一致，重复消息/序号/空洞均为 0 |
 | Worker 重启固定 ID 重试 | 30 条消息最终全部落库，无重复消息和重复序号 |
 
-以上数据来自单机 Docker 开发环境，用于说明实现和验证口径，不直接作为生产集群容量承诺。详细设计和边界见 [`deploy/data/IM-moudule-analysis.md`](deploy/data/IM-moudule-analysis.md) 与 [`deploy/data/im-resume2.0.md`](deploy/data/im-resume2.0.md)。
+以上数据来自单机 Docker 开发环境，用于说明实现和验证口径，不直接作为生产集群容量承诺。详细设计和边界见 [`deploy/data/IM-moudule-analysis.md`](deploy/data/IM-moudule-analysis.md) 与 [`deploy/data/im-resume2.0.md`](deploy/data/im-resume2.0.md)。本次图片与热点场景复测记录见 [`deploy/perf/chat-image-results-2026-10-29.md`](deploy/perf/chat-image-results-2026-10-29.md) 和 [`deploy/perf/chat-hot-listing-optimization-2026-10-29.md`](deploy/perf/chat-hot-listing-optimization-2026-10-29.md)。
 
 ## 可靠性与性能验证
 

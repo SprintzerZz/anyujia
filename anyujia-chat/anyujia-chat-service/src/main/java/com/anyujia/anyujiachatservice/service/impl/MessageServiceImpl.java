@@ -5,6 +5,7 @@ import com.anyujia.anyujiachatapi.domain.dto.AgentMessageReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageListReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageReadReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSendReqDTO;
+import com.anyujia.anyujiachatservice.id.ChatIdWorker;
 import com.anyujia.anyujiachatapi.domain.dto.MessageSyncReqDTO;
 import com.anyujia.anyujiachatapi.domain.dto.MessageVisitedReqDTO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
@@ -23,6 +24,7 @@ import com.anyujia.anyujiachatservice.metrics.ChatMetrics;
 import com.anyujia.anyujiachatservice.realtime.ChatMessageOutboxService;
 import com.anyujia.anyujiachatservice.service.ConversationMemberService;
 import com.anyujia.anyujiachatservice.service.MessageService;
+import com.anyujia.anyujiachatservice.service.ChatImageService;
 import com.anyujia.anyujiachatservice.realtime.ChatMessagePublisher;
 import com.anyujia.anyujiachatservice.service.moderation.ChatContentModerationService;
 import com.anyujia.anyujiachatservice.service.ratelimit.ConversationRateLimiter;
@@ -70,6 +72,9 @@ public class MessageServiceImpl implements MessageService {
     private final ChatConversationIndexCache conversationIndexCache;
     private final ChatMessageShardRouter shardRouter;
     private final ChatMessageOutboxService outboxService;
+
+    @Autowired(required = false)
+    private ChatImageService chatImageService;
 
     @org.springframework.beans.factory.annotation.Value("${chat.message-sharding.mode:LEGACY_ONLY}")
     private ChatMessageStorageMode storageMode = ChatMessageStorageMode.LEGACY_ONLY;
@@ -132,6 +137,13 @@ public class MessageServiceImpl implements MessageService {
             if (existing != null) {
                 return toVO(existing);
             }
+            if (request.getType() == ChatConstants.MESSAGE_TYPE_IMAGE) {
+                if (agentConversation || chatImageService == null) {
+                    throw new ServiceException("Image messages are not supported in this conversation",
+                            ResultCode.INVALID_PARA.getCode());
+                }
+                chatImageService.requireOwnedImage(request.getContent(), request.getSessionId(), userId);
+            }
             long rateLimitStart = System.nanoTime();
             if (!conversationRateLimiter.tryAcquire(request.getSessionId())) {
                 chatMetrics.recordRateLimit(rateLimitStart);
@@ -149,7 +161,8 @@ public class MessageServiceImpl implements MessageService {
             message.setSenderId(userId);
             message.setRecipientId(recipientId);
             message.setType(request.getType());
-            message.setContent(contentModerationService.moderate(request.getContent()));
+            message.setContent(request.getType() == ChatConstants.MESSAGE_TYPE_IMAGE
+                    ? request.getContent() : contentModerationService.moderate(request.getContent()));
             message.setStatus(ChatConstants.MESSAGE_UNREAD);
             message.setVisited(ChatConstants.MESSAGE_NOT_VISITED);
             message.setCreatedAt(LocalDateTime.now());
@@ -534,6 +547,9 @@ public class MessageServiceImpl implements MessageService {
     }
 
     private void insertMessage(ChatMessage message) {
+        if (message.getId() == null) {
+            message.setId(ChatIdWorker.nextId());
+        }
         if (physicalMessageRouting()) {
             if (storageMode == ChatMessageStorageMode.DUAL_WRITE) {
                 // Legacy first so the mapper assigns the snowflake id, then reuse it for the shard.
@@ -686,6 +702,9 @@ public class MessageServiceImpl implements MessageService {
         vo.setSessionId(message.getConversationId());
         vo.setFromId(message.getSenderId());
         vo.setContent(message.getContent());
+        if (Integer.valueOf(ChatConstants.MESSAGE_TYPE_IMAGE).equals(message.getType()) && chatImageService != null) {
+            vo.setImage(chatImageService.image(message.getContent()));
+        }
         vo.setType(message.getType());
         vo.setStatus(message.getStatus());
         vo.setVisited(message.getVisited());

@@ -9,7 +9,8 @@ import com.anyujia.anyujiachatservice.service.unread.ChatUnreadService;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardRouter;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageShardStore;
 import com.anyujia.anyujiachatservice.sharding.ChatMessageStorageMode;
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.anyujia.anyujiachatservice.metrics.ChatMetrics;
+import com.anyujia.anyujiachatservice.id.ChatIdWorker;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -62,6 +63,9 @@ public class ChatMessageOutboxService {
 
     @Autowired(required = false)
     private ChatMessageShardStore shardStore;
+
+    @Autowired(required = false)
+    private ChatMetrics chatMetrics;
 
     @Value("${chat.outbox.batch-size:100}")
     private int batchSize;
@@ -239,7 +243,7 @@ public class ChatMessageOutboxService {
                 }
                 sql.append("(?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))");
                 OutboxTarget target = targets.get(i);
-                args.add(IdWorker.getId());
+                args.add(ChatIdWorker.nextId());
                 args.add(messageId);
                 args.add(target.recipientId());
                 args.add(target.eventType());
@@ -254,8 +258,9 @@ public class ChatMessageOutboxService {
     private record OutboxTarget(Long recipientId, String eventType) {
     }
 
-    @Scheduled(fixedDelayString = "${chat.outbox.poll-millis:1000}")
+    @Scheduled(fixedDelayString = "${chat.outbox.poll-millis:250}")
     public void publishPending() {
+        long claimStart = System.nanoTime();
         int limit = Math.max(1, Math.min(batchSize, 500));
         Timestamp processingDeadline = Timestamp.from(Instant.now().minusMillis(
                 Math.max(1_000L, processingTimeoutMillis)));
@@ -284,9 +289,11 @@ public class ChatMessageOutboxService {
                      LIMIT ?
                     """, claimToken, processingDeadline, limit - claimed);
         }
+        if (chatMetrics != null) chatMetrics.recordOutboxClaim(claimStart);
         if (claimed == 0) {
             return;
         }
+        long loadStart = System.nanoTime();
         List<OutboxRow> rows = jdbcTemplate.query("""
                 SELECT id, message_id, recipient_id, event_type, payload, retry_count
                   FROM chat_message_outbox
@@ -296,6 +303,7 @@ public class ChatMessageOutboxService {
                 rs.getLong("id"), rs.getLong("message_id"), rs.getLong("recipient_id"),
                 rs.getString("event_type"), rs.getString("payload"), rs.getInt("retry_count")),
                 claimToken);
+        if (chatMetrics != null) chatMetrics.recordOutboxLoad(loadStart);
         if (rows.isEmpty()) {
             return;
         }
@@ -332,6 +340,7 @@ public class ChatMessageOutboxService {
             markDone(skippedIds, claimToken);
         }
 
+        long dispatchStart = System.nanoTime();
         List<Long> successfulIds = Collections.synchronizedList(new ArrayList<>());
         List<CompletableFuture<Void>> futures = new ArrayList<>(kept.size());
         for (OutboxRow row : kept.values()) {
@@ -346,9 +355,12 @@ public class ChatMessageOutboxService {
             }, dispatchExecutor));
         }
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        if (chatMetrics != null) chatMetrics.recordOutboxDispatch(dispatchStart);
 
         if (!successfulIds.isEmpty()) {
+            long doneStart = System.nanoTime();
             markDone(successfulIds, claimToken);
+            if (chatMetrics != null) chatMetrics.recordOutboxMarkDone(doneStart);
         }
     }
 
@@ -461,7 +473,7 @@ public class ChatMessageOutboxService {
                 }
                 sql.append("(?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))");
                 OutboxTarget target = targets.get(i);
-                args.add(IdWorker.getId());
+                args.add(ChatIdWorker.nextId());
                 args.add(messageId);
                 args.add(target.recipientId());
                 args.add(target.eventType());
@@ -661,12 +673,26 @@ public class ChatMessageOutboxService {
         int limit = Math.max(1, Math.min(cleanupBatchSize, 10_000));
         int retention = Math.max(1, Math.min(sentRetentionDays, 3650));
         Timestamp cutoff = Timestamp.from(Instant.now().minusSeconds(retention * 86_400L));
-        int deleted = jdbcTemplate.update("""
-                DELETE FROM chat_message_outbox
+        // ORDER BY id used the status-only index and filesorted every old sent row before
+        // deleting a batch. On a large table that held next-key locks long enough to block
+        // inserts of new outbox events. Walk the cleanup index, then delete point keys.
+        List<Long> ids = jdbcTemplate.query("""
+                SELECT id FROM chat_message_outbox FORCE INDEX (idx_chat_outbox_sent_cleanup)
                  WHERE status = 2 AND updated_at < ?
-                 ORDER BY id
+                 ORDER BY updated_at, id
                  LIMIT ?
-                """, cutoff, limit);
+                """, (rs, rowNum) -> rs.getLong("id"), cutoff, limit);
+        if (ids.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(",", Collections.nCopies(ids.size(), "?"));
+        Object[] params = new Object[ids.size() + 1];
+        params[0] = cutoff;
+        for (int i = 0; i < ids.size(); i++) {
+            params[i + 1] = ids.get(i);
+        }
+        int deleted = jdbcTemplate.update("DELETE FROM chat_message_outbox "
+                + "WHERE status = 2 AND updated_at < ? AND id IN (" + placeholders + ")", params);
         if (deleted > 0) {
             log.info("Cleaned sent chat outbox records, deleted={}, retentionDays={}", deleted, retention);
         }

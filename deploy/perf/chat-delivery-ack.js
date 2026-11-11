@@ -47,7 +47,8 @@ export default function () {
           const frame = JSON.parse(payload);
           if (frame.type === 'chat') {
             received += 1;
-            socket.send(JSON.stringify({ type: 'delivery_ack', data: { messageId: frame.data.messageId } }));
+            socket.send(JSON.stringify({ version: 1, requestId: `ack-${__VU}-${Date.now()}`,
+              type: 'delivery_ack', data: { messageId: frame.data.messageId } }));
             acked += 1;
           }
         } catch (_) {

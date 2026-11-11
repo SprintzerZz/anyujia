@@ -35,7 +35,7 @@ public class ChatConversationIndexCalibrator {
                 userConversationMapper.touchMessage(userId, conversationId,
                         update.messageId(), update.messageSeq(), update.messageTime());
                 if (indexCache.isSameUpdate(userId, conversationId, update)) {
-                    indexCache.markFlushed(userId, conversationId);
+                    indexCache.markFlushed(userId, conversationId, update);
                 }
             } catch (RuntimeException ex) {
                 log.warn("Failed to calibrate conversation index, userId={}, conversationId={}",

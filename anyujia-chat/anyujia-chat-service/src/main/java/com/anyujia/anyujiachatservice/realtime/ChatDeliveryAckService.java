@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RMap;
 import org.redisson.api.RScoredSortedSet;
+import org.redisson.api.RBatch;
 import org.redisson.api.RedissonClient;
 import org.redisson.client.codec.StringCodec;
 import org.springframework.stereotype.Component;
@@ -37,10 +38,12 @@ public class ChatDeliveryAckService {
     public void track(Long userId, MessageVO message, int attempts, long ackTimeoutMillis) {
         try {
             PendingDelivery pending = new PendingDelivery(userId, message, attempts);
-            redissonClient.getMap(PENDING_PREFIX + userId, codec)
-                    .put(message.getMessageId(), objectMapper.writeValueAsString(pending));
-            redissonClient.getScoredSortedSet(DUE_ZSET, codec)
-                    .add(System.currentTimeMillis() + ackTimeoutMillis, member(userId, message.getMessageId()));
+            RBatch batch = redissonClient.createBatch();
+            batch.getMap(PENDING_PREFIX + userId, codec)
+                    .putAsync(message.getMessageId(), objectMapper.writeValueAsString(pending));
+            batch.getScoredSortedSet(DUE_ZSET, codec)
+                    .addAsync(System.currentTimeMillis() + ackTimeoutMillis, member(userId, message.getMessageId()));
+            batch.execute();
         } catch (Exception ex) {
             log.warn("Failed to track pending delivery, userId={}, messageId={}",
                     userId, message.getMessageId(), ex);
@@ -49,8 +52,7 @@ public class ChatDeliveryAckService {
 
     public void ack(Long userId, String messageId) {
         try {
-            redissonClient.getMap(PENDING_PREFIX + userId, codec).remove(messageId);
-            redissonClient.getScoredSortedSet(DUE_ZSET, codec).remove(member(userId, messageId));
+            removePending(userId, messageId);
         } catch (Exception ex) {
             log.warn("Failed to acknowledge delivery, userId={}, messageId={}", userId, messageId, ex);
         }
@@ -58,11 +60,17 @@ public class ChatDeliveryAckService {
 
     public void remove(Long userId, String messageId) {
         try {
-            redissonClient.getMap(PENDING_PREFIX + userId, codec).remove(messageId);
-            redissonClient.getScoredSortedSet(DUE_ZSET, codec).remove(member(userId, messageId));
+            removePending(userId, messageId);
         } catch (Exception ex) {
             log.warn("Failed to remove pending delivery, userId={}, messageId={}", userId, messageId, ex);
         }
+    }
+
+    private void removePending(Long userId, String messageId) {
+        RBatch batch = redissonClient.createBatch();
+        batch.getMap(PENDING_PREFIX + userId, codec).removeAsync(messageId);
+        batch.getScoredSortedSet(DUE_ZSET, codec).removeAsync(member(userId, messageId));
+        batch.execute();
     }
 
     public List<PendingDelivery> overdue(long nowMillis, int limit) {

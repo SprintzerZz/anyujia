@@ -9,7 +9,6 @@ import com.anyujia.anyujiafileservice.domain.dto.SignDTO;
 import com.anyujia.anyujiafileservice.domain.vo.SignVO;
 import com.anyujia.anyujiafileservice.service.IOSSFileService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,7 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @RestController
 @RequiredArgsConstructor
-@ConditionalOnProperty(value = "storage.type", havingValue = "oss")
 public class FileController implements FileFeignClient {
 
     private final IOSSFileService IFileService;

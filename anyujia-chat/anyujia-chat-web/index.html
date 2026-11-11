@@ -100,6 +100,10 @@
             </div>
           </div>
           <form id="composer" class="composer">
+            <label class="chat-image-picker" title="发送图片">
+              <span>图片</span>
+              <input id="chatImageInput" type="file" accept="image/jpeg,image/png,image/gif" disabled />
+            </label>
             <textarea id="messageInput" rows="1" maxlength="1024" placeholder="输入消息" disabled></textarea>
             <button id="sendButton" class="send-button" type="submit" title="发送消息" disabled>
               <i data-lucide="send"></i>

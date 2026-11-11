@@ -56,6 +56,22 @@ CREATE TABLE IF NOT EXISTS `chat_message`
     KEY `idx_chat_message_recipient_visited` (`conversation_id`, `recipient_id`, `visited`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Chat message';
 
+CREATE TABLE IF NOT EXISTS `chat_image_asset`
+(
+    `asset_id` varchar(36) NOT NULL,
+    `conversation_id` bigint NOT NULL,
+    `owner_id` bigint NOT NULL,
+    `object_key` varchar(512) NOT NULL,
+    `url` varchar(1024) NOT NULL,
+    `content_type` varchar(32) NOT NULL,
+    `size_bytes` bigint NOT NULL,
+    `width` int NOT NULL,
+    `height` int NOT NULL,
+    `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`asset_id`),
+    KEY `idx_chat_image_asset_owner` (`owner_id`, `conversation_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Uploaded chat images';
+
 CREATE TABLE IF NOT EXISTS `chat_user_conversation`
 (
     `user_id`                    bigint      NOT NULL,

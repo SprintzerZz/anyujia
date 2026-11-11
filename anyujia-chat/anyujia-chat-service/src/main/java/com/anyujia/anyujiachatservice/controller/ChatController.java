@@ -16,10 +16,12 @@ import com.anyujia.anyujiachatapi.domain.vo.ConversationCreateVO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationContextVO;
 import com.anyujia.anyujiachatapi.domain.vo.ConversationVO;
 import com.anyujia.anyujiachatapi.domain.vo.MessageVO;
+import com.anyujia.anyujiachatapi.domain.vo.ChatImageVO;
 import com.anyujia.anyujiachatapi.domain.vo.WebSocketTicketVO;
 import com.anyujia.anyujiachatapi.feign.ChatFeignClient;
 import com.anyujia.anyujiachatservice.service.ConversationService;
 import com.anyujia.anyujiachatservice.service.MessageService;
+import com.anyujia.anyujiachatservice.service.ChatImageService;
 import com.anyujia.anyujiachatservice.realtime.ChatWebSocketTicketService;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.domain.ResultCode;
@@ -32,6 +34,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/chat")
@@ -40,6 +45,17 @@ public class ChatController implements ChatFeignClient {
     private final ConversationService conversationService;
     private final MessageService messageService;
     private final ChatWebSocketTicketService webSocketTicketService;
+    private final ChatImageService chatImageService;
+
+    @PostMapping("/image/upload")
+    public ApiResult<ChatImageVO> uploadImage(@RequestHeader("userId") Long userId,
+                                              @RequestHeader("userFrom") String userFrom,
+                                              @RequestParam("sessionId") Long sessionId,
+                                              @RequestParam("uploadId") String uploadId,
+                                              @RequestPart("file") MultipartFile file) {
+        requireApp(userFrom);
+        return ApiResult.success(chatImageService.upload(userId, sessionId, uploadId, file));
+    }
 
     @Override
     @PostMapping("/session/add")

@@ -3,6 +3,7 @@ package com.anyujia.anyujiachatservice.realtime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
@@ -31,11 +32,16 @@ class ChatMessageOutboxServiceTest {
                 new ChatMessageShardRouter(32));
         ReflectionTestUtils.setField(service, "sentRetentionDays", 7);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 20_000);
-        when(jdbcTemplate.update(anyString(), any(Timestamp.class), eq(10_000))).thenReturn(3);
+        when(jdbcTemplate.query(argThat(sql -> sql.contains("FORCE INDEX (idx_chat_outbox_sent_cleanup)")),
+                any(RowMapper.class), any(Timestamp.class), eq(10_000))).thenReturn(List.of(10L, 20L));
+        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(2);
 
         service.cleanupSent();
 
-        verify(jdbcTemplate).update(anyString(), any(Timestamp.class), eq(10_000));
+        verify(jdbcTemplate).query(argThat(sql -> sql.contains("ORDER BY updated_at, id")),
+                any(RowMapper.class), any(Timestamp.class), eq(10_000));
+        verify(jdbcTemplate).update(argThat(sql -> sql.contains("id IN (?,?)")
+                && sql.contains("status = 2") && sql.contains("updated_at < ?")), any(Object[].class));
     }
 
     @Test

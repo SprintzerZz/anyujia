@@ -1,7 +1,7 @@
 package com.anyujia.anyujiachatservice.sharding;
 
 import com.anyujia.anyujiachatservice.domain.entity.ChatMessage;
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.anyujia.anyujiachatservice.id.ChatIdWorker;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -124,7 +124,7 @@ public class ChatMessageShardStore {
 
     public int insert(ChatMessage message) {
         if (message.getId() == null) {
-            message.setId(IdWorker.getId());
+            message.setId(ChatIdWorker.nextId());
         }
         String table = tableFor(message.getConversationId());
         return templateFor(message.getConversationId()).update(String.format(INSERT_SQL, table),

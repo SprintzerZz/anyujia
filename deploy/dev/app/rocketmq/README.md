@@ -15,7 +15,7 @@ It is sized for the current 4 GiB cloud server and intentionally omits Dashboard
 Run from `deploy/dev/app`:
 
 ```bash
-export ROCKETMQ_BROKER_IP=10.1.0.16
+export ROCKETMQ_BROKER_IP=192.0.2.10  # Replace with your own private IP
 docker compose -p framework-java -f docker-compose-mid.yml config
 docker compose -p framework-java -f docker-compose-mid.yml pull frameworkjava-rocketmq-init frameworkjava-rocketmq-namesrv frameworkjava-rocketmq-broker frameworkjava-rocketmq-topic-init
 docker compose -p framework-java -f docker-compose-mid.yml up -d frameworkjava-rocketmq-namesrv frameworkjava-rocketmq-broker frameworkjava-rocketmq-topic-init

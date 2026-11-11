@@ -8,7 +8,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @MapperScan("com.anyujia.anyujiachatservice.mapper")
-@EnableFeignClients(basePackages = {"com.anyujia.anyujiaadminapi", "com.anyujia.anyujiahouseapi", "com.anyujia.anyujialegalapi"})
+@EnableFeignClients(basePackages = {"com.anyujia.anyujiaadminapi", "com.anyujia.anyujiahouseapi", "com.anyujia.anyujialegalapi", "com.anyujia.anyujiafileapi"})
 @EnableScheduling
 @SpringBootApplication(scanBasePackages = "com.anyujia")
 @ConfigurationPropertiesScan(basePackages = "com.anyujia.anyujiachatservice")

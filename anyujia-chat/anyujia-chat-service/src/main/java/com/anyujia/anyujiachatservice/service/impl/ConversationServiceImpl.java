@@ -32,7 +32,7 @@ import com.anyujia.anyujiacommondomain.domain.ResultCode;
 import com.anyujia.anyujiacommondomain.domain.ApiResult;
 import com.anyujia.anyujiacommondomain.exception.ServiceException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.anyujia.anyujiachatservice.id.ChatIdWorker;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -90,7 +90,7 @@ public class ConversationServiceImpl implements ConversationService {
         ChatConversation conversation = find(tenantId, landlordId, request.getHousePublishId());
         if (conversation == null) {
             conversation = new ChatConversation();
-            conversation.setId(IdWorker.getId());
+            conversation.setId(ChatIdWorker.nextId());
             conversation.setTenantUserId(tenantId);
             conversation.setLandlordUserId(landlordId);
             conversation.setHouseId(publication.getHouseId());
@@ -127,7 +127,7 @@ public class ConversationServiceImpl implements ConversationService {
         }
         memberService.requireMember(sourceConversation.getId(), userId);
         ChatConversation conversation = new ChatConversation();
-        conversation.setId(IdWorker.getId());
+        conversation.setId(ChatIdWorker.nextId());
         conversation.setTenantUserId(userId);
         conversation.setLandlordUserId(ChatConstants.AGENT_USER_ID);
         conversation.setHouseId(sourceConversation.getHouseId());

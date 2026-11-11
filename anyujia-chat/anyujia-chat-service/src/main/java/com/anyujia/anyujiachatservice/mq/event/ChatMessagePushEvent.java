@@ -12,4 +12,9 @@ public class ChatMessagePushEvent {
     private Long recipientId;
     private MessageVO message;
     private int attempts;
+    private long publishedAtMillis;
+
+    public ChatMessagePushEvent(Long recipientId, MessageVO message, int attempts) {
+        this(recipientId, message, attempts, System.currentTimeMillis());
+    }
 }

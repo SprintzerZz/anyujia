@@ -44,11 +44,14 @@ const elements = {
   emptyState: document.querySelector('#emptyState'),
   composer: document.querySelector('#composer'),
   messageInput: document.querySelector('#messageInput'),
+  imageInput: document.querySelector('#chatImageInput'),
   send: document.querySelector('#sendButton'),
 };
 
 let client = null;
 let running = false;
+let connectionState = 'idle';
+let pendingImageUpload = null;
 let currentUserId = '';
 const renderedMessageIds = new Set();
 const messageStore = new ChatMessageStore();
@@ -188,6 +191,7 @@ function disconnect() {
 
 function handleConnectionState(state, error) {
   if (!running) return;
+  connectionState = state;
   const states = {
     connecting: ['connecting', '正在连接'],
     synchronizing: ['syncing', '同步消息'],
@@ -198,6 +202,7 @@ function handleConnectionState(state, error) {
   const [style, label] = states[state] || ['idle', state];
   setStatus(style, label);
   elements.messageInput.disabled = state !== 'connected';
+  elements.imageInput.disabled = state !== 'connected';
   elements.send.disabled = state !== 'connected';
   elements.simulate.disabled = state !== 'connected';
   addEvent(label, error?.message || state);
@@ -230,8 +235,17 @@ function renderMessage(message) {
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
-  const content = document.createElement('p');
-  content.textContent = message.content || '';
+  let content;
+  if (message.type === 1 && message.image?.url) {
+    content = document.createElement('img');
+    content.className = 'chat-message-image';
+    content.src = message.image.url;
+    content.alt = '聊天图片';
+    content.loading = 'lazy';
+  } else {
+    content = document.createElement('p');
+    content.textContent = message.type === 1 ? '[图片不可用]' : (message.content || '');
+  }
   const meta = document.createElement('div');
   meta.className = 'message-meta';
   const time = Number(message.createTime);
@@ -257,6 +271,58 @@ function sendMessage(event) {
   resizeComposer();
 }
 
+async function sendImage() {
+  const file = elements.imageInput.files?.[0];
+  if (!file || !client) return;
+  const fingerprint = `${file.name}:${file.size}:${file.lastModified}`;
+  if (pendingImageUpload?.fingerprint !== fingerprint) {
+    pendingImageUpload = { fingerprint, uploadId: crypto.randomUUID() };
+  }
+  elements.imageInput.disabled = true;
+  try {
+    if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+      throw new Error('图片大小须在 10 MB 以内');
+    }
+    const form = new FormData();
+    form.append('sessionId', elements.sessionId.value.trim());
+    form.append('uploadId', pendingImageUpload.uploadId);
+    form.append('file', file);
+    const token = elements.token.value.trim();
+    addEvent('上传图片', file.name);
+    const uploaded = await uploadChatImage(form, token);
+    if (!client) throw new Error('连接已断开，请重新发送图片');
+    const clientMessageId = client.send(uploaded.assetId, 1);
+    pendingImageUpload = null;
+    addEvent('发送图片消息', `clientMessageId=${clientMessageId}`);
+  } catch (error) {
+    addEvent('图片发送失败', error.message, 'error');
+  } finally {
+    elements.imageInput.value = '';
+    elements.imageInput.disabled = connectionState !== 'connected';
+  }
+}
+
+async function uploadChatImage(form, token) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch('/chat/image/upload', {
+        method: 'POST',
+        headers: { Authorization: /^Bearer\s/i.test(token) ? token : `Bearer ${token}` },
+        body: form,
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.code === 200000 && payload.data?.assetId) return payload.data;
+      if (attempt === 2 || (response.status !== 429 && response.status < 500)) {
+        throw new Error(payload?.msg || `上传失败，HTTP ${response.status}`);
+      }
+    } catch (error) {
+      if (attempt === 2 || !(error instanceof TypeError)) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
+  throw new Error('图片上传失败');
+}
+
 function setStatus(style, label) {
   elements.badge.className = `status-badge status-${style}`;
   elements.connectionText.textContent = label;
@@ -270,7 +336,9 @@ function setRunningControls(value) {
   elements.sessionId.disabled = value;
   elements.sequence.disabled = value;
   if (!value) {
+    connectionState = 'idle';
     elements.messageInput.disabled = true;
+    elements.imageInput.disabled = true;
     elements.send.disabled = true;
     elements.simulate.disabled = true;
   }
@@ -330,6 +398,7 @@ elements.simulate.addEventListener('click', () => {
 elements.reset.addEventListener('click', () => void resetCursor());
 elements.clearLog.addEventListener('click', () => elements.eventLog.replaceChildren());
 elements.composer.addEventListener('submit', sendMessage);
+elements.imageInput.addEventListener('change', () => void sendImage());
 elements.messageInput.addEventListener('input', resizeComposer);
 elements.messageInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {

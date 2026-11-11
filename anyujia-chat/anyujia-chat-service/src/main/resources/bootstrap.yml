@@ -2,6 +2,14 @@ server:
   port: ${CHAT_SERVER_PORT:18083}
 
 spring:
+  task:
+    scheduling:
+      pool:
+        size: ${CHAT_SCHEDULER_POOL_SIZE:4}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
   config:
     import:
       - optional:nacos:share-redis-${RUN_ENV:dev}.yaml?group=DEFAULT_GROUP&refreshEnabled=true
@@ -62,6 +70,10 @@ seata:
     type: file
 
 chat:
+  image:
+    global-max-concurrent-uploads: ${CHAT_IMAGE_GLOBAL_MAX_CONCURRENT_UPLOADS:8}
+    local-upload-wait-millis: ${CHAT_IMAGE_LOCAL_UPLOAD_WAIT_MILLIS:2000}
+    local-max-waiters: ${CHAT_IMAGE_LOCAL_MAX_WAITERS:16}
   actuator:
     # Empty by default: health/info remain probeable, all other actuator endpoints fail closed.
     access-token: ${CHAT_ACTUATOR_ACCESS_TOKEN:}
@@ -70,9 +82,9 @@ chat:
     # itself is still verified against MySQL on every send.
     participant-cache-ttl-millis: ${CHAT_CONVERSATION_PARTICIPANT_CACHE_TTL_MILLIS:60000}
   outbox:
-    batch-size: ${CHAT_OUTBOX_BATCH_SIZE:100}
-    worker-threads: ${CHAT_OUTBOX_WORKER_THREADS:4}
-    poll-millis: ${CHAT_OUTBOX_POLL_MILLIS:1000}
+    batch-size: ${CHAT_OUTBOX_BATCH_SIZE:250}
+    worker-threads: ${CHAT_OUTBOX_WORKER_THREADS:8}
+    poll-millis: ${CHAT_OUTBOX_POLL_MILLIS:250}
     retry-delay-millis: ${CHAT_OUTBOX_RETRY_DELAY_MILLIS:1000}
     max-retries: ${CHAT_OUTBOX_MAX_RETRIES:10}
     processing-timeout-millis: ${CHAT_OUTBOX_PROCESSING_TIMEOUT_MILLIS:60000}

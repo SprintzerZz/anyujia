@@ -40,7 +40,8 @@ public class LegalChatContextCompressor {
         }
         String normalizedQuery = query == null ? "" : query.toLowerCase(Locale.ROOT);
         List<MessageVO> ranked = messages.stream()
-                .filter(message -> message != null && message.getContent() != null
+                .filter(message -> message != null && (message.getType() == null || message.getType() == 0)
+                        && message.getContent() != null
                         && !message.getContent().isBlank())
                 .sorted(Comparator.comparingInt((MessageVO message) -> score(message, normalizedQuery))
                         .reversed()

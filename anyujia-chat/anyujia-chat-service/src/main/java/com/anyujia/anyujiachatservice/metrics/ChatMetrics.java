@@ -17,6 +17,13 @@ public class ChatMetrics {
     private final Timer findClientTimer;
     private final Timer sequenceTimer;
     private final Timer rateLimitTimer;
+    private final Timer pushQueueDelayTimer;
+    private final Timer pushSocketSendTimer;
+    private final Timer pushAckTrackTimer;
+    private final Timer outboxClaimTimer;
+    private final Timer outboxLoadTimer;
+    private final Timer outboxDispatchTimer;
+    private final Timer outboxMarkDoneTimer;
     private final Counter pushFailureCounter;
     private final Counter rateLimitedCounter;
     private final AtomicInteger onlineConnections = new AtomicInteger();
@@ -50,6 +57,19 @@ public class ChatMetrics {
         this.rateLimitTimer = Timer.builder("chat_message_rate_limit_duration")
                 .description("Chat conversation rate-limit check duration")
                 .register(registry);
+        this.pushQueueDelayTimer = Timer.builder("chat_push_queue_delay")
+                .description("Time from RabbitMQ push publish to consumer start")
+                .register(registry);
+        this.pushSocketSendTimer = Timer.builder("chat_push_socket_send_duration")
+                .description("Time to enqueue a push to local WebSocket connections")
+                .register(registry);
+        this.pushAckTrackTimer = Timer.builder("chat_push_ack_track_duration")
+                .description("Time to record a pending delivery acknowledgement in Redis")
+                .register(registry);
+        this.outboxClaimTimer = Timer.builder("chat_outbox_claim_duration").register(registry);
+        this.outboxLoadTimer = Timer.builder("chat_outbox_load_duration").register(registry);
+        this.outboxDispatchTimer = Timer.builder("chat_outbox_dispatch_duration").register(registry);
+        this.outboxMarkDoneTimer = Timer.builder("chat_outbox_mark_done_duration").register(registry);
         this.pushFailureCounter = Counter.builder("chat_message_push_failures_total")
                 .description("Persisted chat messages whose online push failed")
                 .register(registry);
@@ -103,6 +123,37 @@ public class ChatMetrics {
 
     public void recordRateLimit(long startNanos) {
         rateLimitTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordPushQueueDelay(long publishedAtMillis) {
+        if (publishedAtMillis > 0) {
+            pushQueueDelayTimer.record(Math.max(0L, System.currentTimeMillis() - publishedAtMillis),
+                    TimeUnit.MILLISECONDS);
+        }
+    }
+
+    public void recordPushSocketSend(long startNanos) {
+        pushSocketSendTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordPushAckTrack(long startNanos) {
+        pushAckTrackTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordOutboxClaim(long startNanos) {
+        outboxClaimTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordOutboxLoad(long startNanos) {
+        outboxLoadTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordOutboxDispatch(long startNanos) {
+        outboxDispatchTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    public void recordOutboxMarkDone(long startNanos) {
+        outboxMarkDoneTimer.record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
     }
 
     public void setOutboxBacklog(int pending, int processing) {

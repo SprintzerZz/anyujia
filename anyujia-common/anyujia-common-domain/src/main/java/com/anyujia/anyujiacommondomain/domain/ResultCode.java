@@ -117,6 +117,11 @@ public enum ResultCode {
      */
     REQUEST_METHOD_NOT_SUPPORTED(405000, "请求方法不支持"),
 
+    /**
+     * 请求过多，稍后重试。
+     */
+    TOO_MANY_REQUESTS(429000, "请求过多，请稍后重试"),
+
     // --------------------------- 5xx 服务端处理错误
 
     /**

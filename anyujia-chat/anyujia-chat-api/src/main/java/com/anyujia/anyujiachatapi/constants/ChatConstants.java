@@ -1,6 +1,8 @@
 package com.anyujia.anyujiachatapi.constants;
 
 public final class ChatConstants {
+    public static final int MESSAGE_TYPE_TEXT = 0;
+    public static final int MESSAGE_TYPE_IMAGE = 1;
     public static final int USER_TYPE_TENANT = 1;
     public static final int USER_TYPE_LANDLORD = 2;
     public static final int CONVERSATION_TYPE_LANDLORD_TENANT = 1;

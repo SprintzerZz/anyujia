@@ -1216,3 +1216,20 @@ button svg {
   .public-house-item .tiny-button { grid-column: 1 / -1; }
   .detail-gallery img { width: 100%; }
 }
+.chat-image-picker {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0 10px;
+  color: var(--text-secondary, #526071);
+}
+
+.chat-image-picker input { display: none; }
+
+.chat-message-image {
+  display: block;
+  max-width: min(320px, 60vw);
+  max-height: 320px;
+  object-fit: contain;
+  border-radius: 8px;
+}

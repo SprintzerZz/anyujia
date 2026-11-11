@@ -77,7 +77,23 @@ public class ChatConversationIndexCache {
         return value == null ? null : objectMapper.convertValue(value, IndexUpdate.class);
     }
 
-    public void markFlushed(Long userId, Long conversationId) {
+    public void markFlushed(Long userId, Long conversationId, IndexUpdate flushed) {
+        // A new conversation can be absent from the loaded list while its index update is
+        // still waiting for MySQL calibration. A list reload in that gap caches the old DB
+        // result; invalidate it now that the durable row has caught up.
+        if (Boolean.TRUE.equals(redisService.hasKey(loadedKey(userId)))) {
+            List<com.anyujia.anyujiachatservice.domain.entity.ChatUserConversation> cached =
+                    redisService.getCacheList(listKey(userId),
+                            new TypeReference<List<com.anyujia.anyujiachatservice.domain.entity.ChatUserConversation>>() { });
+            boolean current = cached != null && cached.stream().anyMatch(item ->
+                    conversationId.equals(item.getConversationId())
+                            && item.getLastMessageSeq() != null
+                            && item.getLastMessageSeq() >= flushed.messageSeq());
+            if (!current) {
+                redisService.deleteObject(loadedKey(userId));
+                redisService.deleteObject(listKey(userId));
+            }
+        }
         redisService.deleteCacheMapValue(updateKey(userId), String.valueOf(conversationId));
         redisService.deleteMember(DIRTY_KEY, dirtyMember(userId, conversationId));
     }
@@ -129,9 +145,13 @@ public class ChatConversationIndexCache {
         boolean found = false;
         for (com.anyujia.anyujiachatservice.domain.entity.ChatUserConversation value : values) {
             if (conversationId.equals(value.getConversationId())) {
-                value.setLastMessageId(update.messageId());
-                value.setLastMessageSeq(update.messageSeq());
-                value.setLastMessageTime(update.messageTime());
+                // Outbox events for two messages in the same conversation may finish out
+                // of order. Never let an older event move the visible inbox cursor back.
+                if (value.getLastMessageSeq() == null || value.getLastMessageSeq() < update.messageSeq()) {
+                    value.setLastMessageId(update.messageId());
+                    value.setLastMessageSeq(update.messageSeq());
+                    value.setLastMessageTime(update.messageTime());
+                }
                 found = true;
                 break;
             }
